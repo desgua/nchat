@@ -5,8 +5,8 @@ nchat
 |-----------|---------|
 | [![Linux](https://github.com/d99kris/nchat/workflows/Linux/badge.svg)](https://github.com/d99kris/nchat/actions?query=workflow%3ALinux) | [![macOS](https://github.com/d99kris/nchat/workflows/macOS/badge.svg)](https://github.com/d99kris/nchat/actions?query=workflow%3AmacOS) |
 
-nchat is a multi-protocol terminal-based messaging client for Linux and macOS with support for
-Telegram, WhatsApp and Signal (opt-in).
+nchat is a terminal-based multi-protocol messaging client for Linux and macOS
+with support for Telegram, WhatsApp and Signal.
 
 ![screenshot nchat](/doc/screenshot-nchat.png)
 
@@ -27,12 +27,6 @@ Features
 - Desktop notifications for new messages
 - Toggle textized vs. graphical emojis
 - Customizable [themes](https://github.com/d99kris/nchat/wiki/Themes) and key bindings
-
-
-Optional Features
------------------
-Signal support is disabled by default and requires enabling a
-[feature flag](/doc/SIGNAL.md).
 
 
 Usage
@@ -152,6 +146,28 @@ Arch Linux
 
     yay -S nchat
 
+
+Install Pre-built Binary
+========================
+Experimental support for Linux (glibc >= 2.28 or musl) x86_64 and arm64, as
+well as macOS arm64.
+
+**Install**
+
+    curl -fsSL https://raw.githubusercontent.com/d99kris/nchat/master/utils/install.sh | bash
+
+**Uninstall**
+
+    curl -fsSL https://raw.githubusercontent.com/d99kris/nchat/master/utils/uninstall.sh | bash
+
+**Install Location**
+
+Installs to `~/.local/{bin,share}`. Override via the `NCHAT_PREFIX` environment
+variable, e.g.:
+
+    export NCHAT_PREFIX=/usr/local
+
+
 Build from Source
 =================
 nchat consists of a large code-base (mainly the Telegram library tdlib), so be
@@ -173,6 +189,14 @@ can use the `make.sh` script provided.
 **Build / Install**
 
     ./make.sh build && ./make.sh install
+
+**Install Location**
+
+Installs to a system prefix such as `/usr/local`. Override via the
+`NCHAT_PREFIX` environment variable (a user-writable prefix installs without
+sudo/doas), e.g.:
+
+    export NCHAT_PREFIX=~/.local
 
 Manually
 --------
@@ -224,8 +248,9 @@ By default nchat requires ~3.5GB RAM to build using G++ and ~1.5GB RAM with
 clang++, but it is possible to reduce the memory needed,
 see [Building on Low Memory Systems](/doc/LOWMEMORY.md).
 
-All nchat features are enabled by default, but it's possible to control
-inclusion of some features using cmake flags, see [Feature Flags](/doc/FLAGS.md).
+When building from source, all features except Signal support are enabled by
+default. To enable Signal, see [Signal](/doc/SIGNAL.md); for other feature
+flags, see [Feature Flags](/doc/FLAGS.md).
 
 
 Getting Started
@@ -1342,21 +1367,7 @@ includes the source code of the following third-party libraries:
   Copyright 2022 Tulir Asokan -
   [MPL License](/lib/wmchat/go/ext/whatsmeow/LICENSE)
 
-Binary distributions of nchat bundle these libraries, and for static builds
-their statically linked system dependencies (OpenSSL, ncurses, zlib, ...)
-directly in the executable. Such distributions therefore carry the full
-license texts in a combined `THIRD_PARTY_LICENSES` file installed to
-`share/doc/nchat/` (and copied to the archive top level for visibility). That
-file is assembled at build time from per-component fragments so its content
-matches the protocols the binary was built with (Telegram / WhatsApp / Signal)
-and whether system libraries were linked statically; its preamble states the
-combined-work license. That license is MIT for a Telegram-only build, GNU GPL
-v3 when WhatsApp support is compiled in (whatsmeow links the GPL-3.0 libsignal
-library), and GNU AGPL v3 when Signal support is compiled in, the same rule
-`nchat --version` reports. The Go-dependency fragments
-(`lib/wmchat/THIRD_PARTY_LICENSES`, `lib/sgchat/THIRD_PARTY_LICENSES`) are
-regenerated with `utils/dist/gen-third-party-licenses`; the remaining fragments
-are maintained by hand.
+Binaries are distributed with a combined THIRD_PARTY_LICENSES file.
 
 The [tdlib](https://github.com/tdlib/td),
 [whatsmeow](https://github.com/tulir/whatsmeow) and
@@ -1381,10 +1392,13 @@ Uncrustify is used to maintain consistent source code formatting, example:
 
 License
 =======
-nchat is distributed under the MIT license. See LICENSE file.
+Source is distributed under the [MIT license](/LICENSE).
+
+Binaries are distributed under the [GNU AGPL v3 license](/LICENSE.AGPL-3.0),
+or the [GNU GPL v3 license](/LICENSE.GPL-3.0) if Signal support is disabled.
 
 
 Keywords
 ========
 command line, console-based, linux, macos, chat client, ncurses, telegram,
-terminal-based.
+terminal-based, tui.
