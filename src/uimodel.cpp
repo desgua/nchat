@@ -1252,10 +1252,7 @@ void UiModel::Impl::OpenProfilePhotoPath(const std::string& p_Path)
   if (p_Path.empty()) return;
 
   std::thread([p_Path]() {
-    // Escape or double-quote path to handle spaces safely
-    // Redirect stdin/stdout/stderr and disown process with nohup + &
-    std::string command = "nohup nchat_display \"" + p_Path + "\" >/dev/null 2>&1 &";
-    // std::system executes instantly because the shell detaches nohup
+    std::string command = "nchat_display \"" + p_Path + "\" >/dev/null 2>&1 &";
     std::system(command.c_str());
   }).detach();
 }
@@ -1279,7 +1276,9 @@ void UiModel::Impl::OpenProfilePhoto()
     std::string photoPath = protocol->GetProfilePicturePath(userId);
     if (photoPath.empty())
     {
-      LOG_WARNING("No profile photo available for %s", userId.c_str());
+      std::string command = "notify no photo available &";
+      std::system(command.c_str());
+
       return;
     }
     OpenProfilePhotoPath(photoPath);

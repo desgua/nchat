@@ -255,7 +255,7 @@ void UiHistoryView::Draw()
         {
           std::string filePath = fileInfo.filePath;
           std::thread([filePath]() {
-            std::string command = "nohup nchat_display \"" + filePath + "\" >/dev/null 2>&1 &";
+            std::string command = "nchat_display \"" + filePath + "\" >/dev/null 2>&1 &";
             std::system(command.c_str());
           }).detach();
         }
