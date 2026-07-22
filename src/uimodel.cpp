@@ -1247,6 +1247,45 @@ void UiModel::Impl::OnKeyOpenAttachment(std::string p_FilePath /*= std::string()
   OpenAttachment(p_FilePath);
 }
 
+void UiModel::Impl::OpenProfilePhotoPath(const std::string& p_Path)
+{
+  if (p_Path.empty()) return;
+
+  std::thread([p_Path]() {
+    // Escape or double-quote path to handle spaces safely
+    // Redirect stdin/stdout/stderr and disown process with nohup + &
+    std::string command = "nohup nchat_display \"" + p_Path + "\" >/dev/null 2>&1 &";
+    // std::system executes instantly because the shell detaches nohup
+    std::system(command.c_str());
+  }).detach();
+}
+
+void UiModel::Impl::OpenProfilePhoto()
+{
+  std::pair<std::string, std::string> currentChat = GetCurrentChat();
+  const std::string& protocolId = currentChat.first;
+  const std::string& userId = currentChat.second;
+
+  if (protocolId.empty() || userId.empty()) return;
+
+  // Find the protocol handler in m_Protocols map
+  auto it = m_Protocols.find(protocolId);
+  if (it == m_Protocols.end() || !it->second) return;
+
+  auto protocol = it->second;
+
+  // Offload network request and image opening to a detached thread
+  std::thread([this, protocol, userId]() {
+    std::string photoPath = protocol->GetProfilePicturePath(userId);
+    if (photoPath.empty())
+    {
+      LOG_WARNING("No profile photo available for %s", userId.c_str());
+      return;
+    }
+    OpenProfilePhotoPath(photoPath);
+  }).detach();
+}
+
 void UiModel::Impl::OpenLink(const std::string& p_Url)
 {
   static const std::string cmdTemplate = []()
@@ -4573,6 +4612,7 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyPrevChat = UiKeyConfig::GetKey("prev_chat");
   static wint_t keyNextUnreadChat = UiKeyConfig::GetKey("next_unread_chat");
   static wint_t keyPrevUnreadChat = UiKeyConfig::GetKey("prev_unread_chat");
+  static wint_t keyOpenProfilePhoto = UiKeyConfig::GetKey("open_profile_photo");
 
   static wint_t keyQuit = UiKeyConfig::GetKey("quit");
   static wint_t keySelectEmoji = UiKeyConfig::GetKey("select_emoji");
@@ -4678,6 +4718,11 @@ void UiModel::KeyHandler(wint_t p_Key)
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyPrevUnreadChat();
+  }
+  else if (p_Key == keyOpenProfilePhoto)
+  {
+    std::unique_lock<owned_mutex> lock(m_ModelMutex);
+    GetImpl().OpenProfilePhoto();
   }
   else if (p_Key == keyPrevPage)
   {

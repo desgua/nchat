@@ -198,6 +198,9 @@ private:
     static bool IsAttachmentDownloadable(const FileInfo& p_FileInfo, bool p_AllowRetryFailed = false);
     static void SanitizeEntryStr(std::string& p_Str);
 
+    void OpenProfilePhoto();
+    void OpenProfilePhotoPath(const std::string& p_Path);
+
   private:
     void SortChats();
     void OnCurrentChatChanged();

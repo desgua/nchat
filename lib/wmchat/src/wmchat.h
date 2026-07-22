@@ -39,6 +39,7 @@ public:
 
   std::string GetProfileId() const;
   std::string GetProfileDisplayName() const;
+  std::string GetProfilePicturePath(const std::string& p_UserId) override;
   bool HasFeature(ProtocolFeature p_ProtocolFeature) const;
   bool IsGroupChat(const std::string& p_ChatId) const;
   std::string GetSelfId() const;

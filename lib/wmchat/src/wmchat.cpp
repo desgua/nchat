@@ -181,6 +181,19 @@ bool WmChat::LoadProfile(const std::string& p_ProfilesDir, const std::string& p_
   return true;
 }
 
+std::string WmChat::GetProfilePicturePath(const std::string& p_UserId)
+{
+  char* c_path = WmGetProfilePicture(static_cast<GoInt>(m_ConnId), const_cast<char*>(p_UserId.c_str()));
+  if (!c_path)
+  {
+    return "";
+  }
+
+  std::string path(c_path);
+  free(c_path);
+  return path;
+}
+
 bool WmChat::CloseProfile()
 {
   if ((m_WhatsmeowDate != m_ProfileDirVersion) && m_WasOnline)

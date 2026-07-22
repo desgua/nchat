@@ -7,6 +7,8 @@
 
 package main
 
+import "C"
+
 import (
 	"bufio"
 	"context"
@@ -15,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"math"
 	"mime"
 	"os"
@@ -1569,6 +1572,77 @@ func GetContacts(connId int) {
 
 	SetNamesSynced(connId, true)
 	CWmClearStatus(connId, FlagFetching)
+}
+
+//export WmGetProfilePicture
+func WmGetProfilePicture(connId int, userIdStr *C.char) *C.char {
+	client := GetClient(connId)
+	if client == nil {
+		return nil
+	}
+
+	goUserId := C.GoString(userIdStr) // Convert C string to Go string
+	jid, err := types.ParseJID(goUserId)
+	if err != nil {
+		LOG_WARNING(fmt.Sprintf("Invalid JID for profile picture: %s", goUserId))
+		return nil
+	}
+
+	ctx := context.TODO()
+	// 1. Fetch high-res picture info from WhatsApp servers
+	picInfo, err := client.GetProfilePictureInfo(ctx, jid, &whatsmeow.GetProfilePictureParams{
+		Preview: false,
+	})
+	if err != nil || picInfo == nil || picInfo.URL == "" {
+		LOG_WARNING(fmt.Sprintf("Failed to fetch profile picture info for %s: %v", userIdStr, err))
+		return nil
+	}
+
+	// 2. Prepare local cache path (~/.cache/nchat/avatars/<ID>_<DirectPath>.jpg)
+	// Using DirectPath or ID ensures we re-download if the user updates their picture
+	cacheDir := filepath.Join(os.Getenv("HOME"), ".cache", "nchat", "avatars")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		LOG_WARNING(fmt.Sprintf("Failed to create avatar cache dir: %v", err))
+		return nil
+	}
+
+	fileName := fmt.Sprintf("%s.jpg", jid.User)
+	if picInfo.ID != "" {
+		fileName = fmt.Sprintf("%s_%s.jpg", jid.User, picInfo.ID)
+	}
+	localPath := filepath.Join(cacheDir, fileName)
+
+	// 3. Check if cached file already exists
+	if _, err := os.Stat(localPath); err == nil {
+		LOG_TRACE(fmt.Sprintf("Avatar already cached at %s", localPath))
+		return C.CString(localPath)
+	}
+
+	// 4. Download image bytes from picInfo.URL
+	resp, err := http.Get(picInfo.URL)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		LOG_WARNING(fmt.Sprintf("Failed to download avatar image from %s: %v", picInfo.URL, err))
+		return nil
+	}
+	defer resp.Body.Close()
+
+	out, err := os.Create(localPath)
+	if err != nil {
+		LOG_WARNING(fmt.Sprintf("Failed to create local image file: %v", err))
+		return nil
+	}
+	defer out.Close()
+
+	if _, err = io.Copy(out, resp.Body); err != nil {
+		LOG_WARNING(fmt.Sprintf("Failed to write image bytes to disk: %v", err))
+		return nil
+	}
+
+	LOG_INFO(fmt.Sprintf("Successfully saved profile picture to %s", localPath))
+	return C.CString(localPath)
 }
 
 func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
