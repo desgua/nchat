@@ -253,8 +253,11 @@ void UiHistoryView::Draw()
 
         if (fileInfo.fileStatus == FileStatusDownloaded)
         {
-          std::string command = "nchat_display \"" + fileInfo.filePath + "\" &";
-          system(command.c_str());
+          std::string filePath = fileInfo.filePath;
+          std::thread([filePath]() {
+            std::string command = "nohup nchat_display \"" + filePath + "\" >/dev/null 2>&1 &";
+            std::system(command.c_str());
+          }).detach();
         }
       }
       // end by desgua to display image
