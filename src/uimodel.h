@@ -200,6 +200,7 @@ private:
 
     void OpenProfilePhoto();
     void OpenProfilePhotoPath(const std::string& p_Path);
+    std::map<std::string, std::map<std::string, bool>> m_PendingTextSend;
 
   private:
     void SortChats();
