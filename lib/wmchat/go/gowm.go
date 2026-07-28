@@ -1763,6 +1763,91 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 		contactText := sb.String()
 		msg.Conversation = &contactText
 		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
+
+	case msg.PollCreationMessage != nil || msg.PollCreationMessageV2 != nil || msg.PollCreationMessageV3 != nil:
+		// Extract the actual poll struct regardless of the protocol version
+		var name string
+		var options []string
+
+		if poll := msg.GetPollCreationMessage(); poll != nil {
+			name = poll.GetName()
+			for _, opt := range poll.GetOptions() {
+				options = append(options, opt.GetOptionName())
+			}
+		} else if poll := msg.GetPollCreationMessageV2(); poll != nil {
+			name = poll.GetName()
+			for _, opt := range poll.GetOptions() {
+				options = append(options, opt.GetOptionName())
+			}
+		} else if poll := msg.GetPollCreationMessageV3(); poll != nil {
+			name = poll.GetName()
+			for _, opt := range poll.GetOptions() {
+				options = append(options, opt.GetOptionName())
+			}
+		}
+
+		// Format into a readable string for nchat terminal UI
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("[Poll] %s\n", name))
+		for i, opt := range options {
+			sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, opt))
+		}
+
+		pollText := strings.TrimSpace(sb.String())
+		msg.Conversation = &pollText
+		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
+
+	case msg.PollUpdateMessage != nil:
+		// Poll updates represent user votes (which are encrypted in WhatsApp E2EE)
+		pollVoteText := "[Poll Vote Update]"
+		msg.Conversation = &pollVoteText
+		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
+
+	case msg.LocationMessage != nil:
+		loc := msg.LocationMessage
+		lat := loc.GetDegreesLatitude()
+		long := loc.GetDegreesLongitude()
+		name := loc.GetName()
+		address := loc.GetAddress()
+
+		var sb strings.Builder
+		sb.WriteString("[Location]")
+
+		if name != "" {
+			sb.WriteString(fmt.Sprintf(" %s", name))
+		}
+		if address != "" {
+			sb.WriteString(fmt.Sprintf("\nAddress: %s", address))
+		}
+
+		// Provide direct open-in-browser map URL (OpenStreetMap)
+		sb.WriteString(fmt.Sprintf("\nCoordinates: %.6f, %.6f", lat, long))
+		sb.WriteString(fmt.Sprintf("\nhttps://www.google.com/maps?q=%.6f,%.6f", lat, long))
+
+		locText := sb.String()
+		msg.Conversation = &locText
+		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
+
+	case msg.LiveLocationMessage != nil:
+		loc := msg.LiveLocationMessage
+		lat := loc.GetDegreesLatitude()
+		long := loc.GetDegreesLongitude()
+		caption := loc.GetCaption()
+
+		var sb strings.Builder
+		sb.WriteString("[Live Location]")
+
+		if caption != "" {
+			sb.WriteString(fmt.Sprintf(" %s", caption))
+		}
+
+		sb.WriteString(fmt.Sprintf("\nCoordinates: %.6f, %.6f", lat, long))
+		sb.WriteString(fmt.Sprintf("\nhttps://www.google.com/maps?q=%.6f,%.6f", lat, long))
+
+		locText := sb.String()
+		msg.Conversation = &locText
+		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
+
 	default:
 		handler.HandleUnsupportedMessage(messageInfo, msg, isSyncRead)
 	}
