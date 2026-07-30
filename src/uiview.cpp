@@ -15,6 +15,7 @@
 #include "uikeyconfig.h"
 #include "uilistborderview.h"
 #include "uilistview.h"
+#include "uimodel.h"
 #include "uiscreen.h"
 #include "uistatusview.h"
 #include "uitopview.h"
@@ -121,7 +122,7 @@ void UiView::Draw()
   m_UiListBorderView->Draw();
   m_UiHistoryView->Draw();
   m_UiEntryView->Draw();
-  curs_set(1);
+  curs_set(m_UiModel->IsEntryFocusedLocked() ? 1 : 0);
 }
 
 void UiView::TerminalBell()

@@ -44,6 +44,12 @@ private:
     void SendMessage();
     void OnKeyOtherCommandsHelp();
     void EntryKeyHandler(wint_t p_Key);
+    void OnKeyNextFrame();
+    void OnKeyPrevFrame();
+    bool IsEntryFocused();
+    bool IsListFocused();
+    bool IsHistoryFocused();
+    std::string GetFocusName();
     void SetTyping(const std::string& p_ProfileId, const std::string& p_ChatId, bool p_IsTyping);
 
     void OnKeyNextChat();
@@ -302,6 +308,14 @@ private:
     bool m_TerminalActive = true;
     bool m_HistoryInteraction = false;
 
+    enum class Focus
+    {
+      List,
+      History,
+      Entry,
+    };
+    Focus m_Focus = Focus::Entry;
+
     int m_HelpOffset = 0;
   };
 
@@ -382,6 +396,8 @@ public:
   void MarkReadLocked(const std::string& p_ProfileId, const std::string& p_ChatId, const std::string& p_MsgId,
                       bool p_WasUnread);
   void OnStatusUpdateLocked(uint32_t p_Status);
+  std::string GetFocusedFrameNameLocked();
+  bool IsEntryFocusedLocked();
 
   // Static methods
   static bool IsAttachmentDownloaded(const FileInfo& p_FileInfo);
