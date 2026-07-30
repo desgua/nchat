@@ -2121,8 +2121,12 @@ func (handler *WmEventHandler) HandleAudioMessage(messageInfo types.MessageInfo,
 	// get extension
 	ext := ExtensionByType(aud.GetMimetype(), ".ogg")
 
-	// text
-	text := ""
+	// duration
+	durationSec := aud.GetSeconds()
+	mins := durationSec / 60
+	secs := durationSec % 60
+	durationStr := fmt.Sprintf("🔊 [%02d:%02d]", mins, secs)
+	text := durationStr
 
 	// context
 	quotedId := ""
