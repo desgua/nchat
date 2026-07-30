@@ -4686,6 +4686,8 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationForwardMsg = UiKeyConfig::GetKey("vim_navigation_forward_msg");
   static wint_t keyVimNavigationReact = UiKeyConfig::GetKey("vim_navigation_react");
   static wint_t keyVimNavigationOpenMsg = UiKeyConfig::GetKey("vim_navigation_open_msg");
+  static wint_t keyVimNavigationProfilePhoto = UiKeyConfig::GetKey("vim_navigation_profile_photo");
+  static wint_t keyVimNavigationEnter = UiKeyConfig::GetKey("ok");
   static wint_t keyPrevPage = UiKeyConfig::GetKey("prev_page");
   static wint_t keyNextPage = UiKeyConfig::GetKey("next_page");
   static wint_t keyEnd = UiKeyConfig::GetKey("end");
@@ -4764,7 +4766,7 @@ void UiModel::KeyHandler(wint_t p_Key)
     GetImpl().OnKeyNextFrame();
     return;
   }
-  else if (p_Key == keyPrevFrame)
+  else if (p_Key == keyPrevFrame || (isListFocused && p_Key == keyVimNavigationEnter))
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyPrevFrame();
@@ -4825,7 +4827,7 @@ void UiModel::KeyHandler(wint_t p_Key)
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyPrevUnreadChat();
   }
-  else if (p_Key == keyOpenProfilePhoto)
+  else if (p_Key == keyOpenProfilePhoto || (isListFocused && p_Key == keyVimNavigationProfilePhoto))
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OpenProfilePhoto();
