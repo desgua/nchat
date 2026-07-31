@@ -253,6 +253,7 @@ void UiKeyConfig::Init(bool p_MapKeys)
     { "vim_navigation_open_msg", "" },
     { "vim_navigation_profile_photo", "" },
     { "vim_navigation_end", "" },
+    { "vim_navigation_focus_entry", "" },
     { "next_unread_chat", "KEY_NONE" }, // alt/opt-y
     { "prev_unread_chat", "KEY_NONE" }, // alt/opt-o
     { "open_profile_photo", "KEY_NONE" },

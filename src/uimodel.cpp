@@ -4689,6 +4689,7 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationProfilePhoto = UiKeyConfig::GetKey("vim_navigation_profile_photo");
   static wint_t keyVimNavigationEnd = UiKeyConfig::GetKey("vim_navigation_end");
   static wint_t keyVimNavigationEnter = UiKeyConfig::GetKey("ok");
+  static wint_t keyVimNavigationFocusEntry = UiKeyConfig::GetKey("vim_navigation_focus_entry");
   static wint_t keyPrevPage = UiKeyConfig::GetKey("prev_page");
   static wint_t keyNextPage = UiKeyConfig::GetKey("next_page");
   static wint_t keyEnd = UiKeyConfig::GetKey("end");
@@ -5032,6 +5033,17 @@ void UiModel::KeyHandler(wint_t p_Key)
       {
         static wint_t keyUp = UiKeyConfig::GetKey("up");
         GetImpl().EntryKeyHandler(keyUp);
+      }
+      else if (p_Key == keyVimNavigationFocusEntry)
+      {
+        GetImpl().OnKeyNextFrame();
+      }
+    }
+    else if (isListFocused)
+    {
+      if (p_Key == keyVimNavigationFocusEntry)
+      {
+        GetImpl().OnKeyPrevFrame();
       }
     }
     else if (isEntryFocused)
