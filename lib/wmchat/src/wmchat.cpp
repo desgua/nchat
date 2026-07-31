@@ -194,6 +194,17 @@ std::string WmChat::GetProfilePicturePath(const std::string& p_UserId)
   return path;
 }
 
+std::string WmChat::CheckPhoneNumber(const std::string& p_PhoneNumber)
+{
+  char* resolvedUserId = WmCheckIsOnWhatsApp(static_cast<GoInt>(m_ConnId),
+                                              const_cast<char*>(p_PhoneNumber.c_str()));
+  if (resolvedUserId == nullptr) return "";
+
+  std::string userId(resolvedUserId);
+  free(resolvedUserId);
+  return userId;
+}
+
 bool WmChat::CloseProfile()
 {
   if ((m_WhatsmeowDate != m_ProfileDirVersion) && m_WasOnline)

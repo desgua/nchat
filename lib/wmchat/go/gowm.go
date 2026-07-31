@@ -1645,6 +1645,61 @@ func WmGetProfilePicture(connId int, userIdStr *C.char) *C.char {
 	return C.CString(localPath)
 }
 
+//export WmCheckIsOnWhatsApp
+func WmCheckIsOnWhatsApp(connId int, phoneNumberStr *C.char) *C.char {
+
+	LOG_TRACE("check is on whatsapp " + strconv.Itoa(connId))
+
+	// sanity check arg
+	if connId == -1 {
+		LOG_WARNING("invalid connId")
+		return nil
+	}
+
+	// get client
+	client := GetClient(connId)
+	if client == nil {
+		LOG_WARNING("client is nil")
+		return nil
+	}
+
+	goPhoneNumber := C.GoString(phoneNumberStr)
+	sanitizedPhone := SanitizePhoneNumber(goPhoneNumber)
+	if len(sanitizedPhone) == 0 {
+		LOG_WARNING("phone number empty after sanitization")
+		return nil
+	}
+
+	ctx := context.TODO()
+	resp, err := client.IsOnWhatsApp(ctx, []string{sanitizedPhone})
+	if err != nil {
+		LOG_WARNING(fmt.Sprintf("is on whatsapp check failed %#v", err))
+		return nil
+	}
+
+	if len(resp) == 0 || !resp[0].IsIn {
+		LOG_TRACE(fmt.Sprintf("phone %s is not registered on whatsapp", sanitizedPhone))
+		return nil
+	}
+
+	userId := StrFromJid(resp[0].JID)
+	LOG_TRACE(fmt.Sprintf("phone %s resolved to %s", sanitizedPhone, userId))
+
+	// cache the phone number as a fallback display name (GetContactName
+	// falls back to the raw JID otherwise) until a real contact sync
+	// populates a proper name
+	if !HasContact(connId, userId) {
+		AddContactName(connId, userId, sanitizedPhone)
+	}
+
+	return C.CString(userId)
+}
+
+func SanitizePhoneNumber(phoneNumber string) string {
+	rePhone := regexp.MustCompile(`[^0-9+]`)
+	return rePhone.ReplaceAllString(phoneNumber, "")
+}
+
 func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
 	switch {
 	case msg.Conversation != nil || msg.ExtendedTextMessage != nil:

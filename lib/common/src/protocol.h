@@ -50,6 +50,7 @@ public:
   virtual std::string GetProfileId() const = 0;
   virtual std::string GetProfileDisplayName() const = 0;
   virtual std::string GetProfilePicturePath(const std::string& /*p_UserId*/) { return ""; }
+  virtual std::string CheckPhoneNumber(const std::string& /*p_PhoneNumber*/) { return ""; }
   virtual bool HasFeature(ProtocolFeature p_ProtocolFeature) const = 0;
   virtual bool IsGroupChat(const std::string& p_ChatId) const = 0;
   virtual std::string GetSelfId() const = 0;
