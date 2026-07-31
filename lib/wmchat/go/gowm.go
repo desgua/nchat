@@ -7,8 +7,6 @@
 
 package main
 
-import "C"
-
 import (
 	"bufio"
 	"context"
@@ -24,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"C"
 	"runtime"
 	"runtime/debug"
 	"slices"
