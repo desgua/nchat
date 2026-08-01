@@ -1349,12 +1349,11 @@ void UiModel::OnKeyNewContact()
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     if (GetImpl().GetEditMessageActive()) return;
   }
-  static std::string s_LastPhoneNumber;
   UiDialogParams params(this, "New Chat by Number", 0.5, 5);
-  UiTextInputDialog textInputDialog(params, "Phone: ", s_LastPhoneNumber);
+  UiTextInputDialog textInputDialog(params, "Phone: ", "");
   if (textInputDialog.Run())
   {
-    s_LastPhoneNumber = textInputDialog.GetInput();
+    std::string phoneNumber = textInputDialog.GetInput();
     std::string profileId;
     {
       std::unique_lock<owned_mutex> lock(m_ModelMutex);
@@ -1367,7 +1366,7 @@ void UiModel::OnKeyNewContact()
     }
 
     std::string digitsOnly;
-    for (char c : s_LastPhoneNumber)
+    for (char c : phoneNumber)
     {
       if (isdigit((unsigned char)c))
       {
@@ -1403,7 +1402,7 @@ void UiModel::OnKeyNewContact()
       auto protocolIt = protocols.find(profileId);
       if (protocolIt != protocols.end() && protocolIt->second)
       {
-        userId = protocolIt->second->CheckPhoneNumber(s_LastPhoneNumber);
+        userId = protocolIt->second->CheckPhoneNumber(phoneNumber);
       }
     }
 
