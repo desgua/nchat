@@ -257,6 +257,17 @@ void UiHistoryView::Draw()
         }).detach();
       }
     }
+    // Close display if selection mode is exited or no message is active
+    if (!m_Model->GetSelectMessageActiveLocked())
+    {
+      if (!m_LastSelectedMsgId.empty())
+      {
+        m_LastSelectedMsgId.clear();
+        std::thread([]() {
+          std::system("nchat_display close >/dev/null 2>&1 &");
+        }).detach();
+      }
+    }
     // end by desgua to display image
 
     // Reactions
