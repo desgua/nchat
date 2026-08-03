@@ -4815,6 +4815,7 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationEnd = UiKeyConfig::GetKey("vim_navigation_end");
   static wint_t keyVimNavigationEnter = UiKeyConfig::GetKey("ok");
   static wint_t keyVimNavigationFocusEntry = UiKeyConfig::GetKey("vim_navigation_focus_entry");
+  static wint_t keyVimNavigationQuit = UiKeyConfig::GetKey("vim_navigation_quit");
   static wint_t keyPrevPage = UiKeyConfig::GetKey("prev_page");
   static wint_t keyNextPage = UiKeyConfig::GetKey("next_page");
   static wint_t keyEnd = UiKeyConfig::GetKey("end");
@@ -5005,7 +5006,7 @@ void UiModel::KeyHandler(wint_t p_Key)
       return;
     }
   }
-  else if (p_Key == keyQuit)
+  else if (p_Key == keyQuit || (isListFocused && p_Key == keyVimNavigationQuit) || (isHistoryFocused && p_Key == keyVimNavigationQuit))
   {
     OnKeyQuit();
   }
