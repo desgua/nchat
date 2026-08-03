@@ -3079,27 +3079,6 @@ func WmGetMessages(connId int, chatId string, limit int, fromMsgId string, owner
 	return -1
 }
 
-func humanFileSize(size int64) string {
-	const unit = 1024
-	if size < unit {
-		return fmt.Sprintf("%d B", size)
-	}
-	div, exp := int64(unit), 0
-	for n := size / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(size)/float64(div), "KMGTPE"[exp])
-}
-
-func captionWithSize(text string, size int64) string {
-	sizeStr := humanFileSize(size)
-	if len(text) == 0 {
-		return sizeStr
-	}
-	return text + " (" + sizeStr + ")"
-}
-
 func WmSendMessage(connId int, chatId string, text string, quotedId string, quotedText string, quotedSender string, filePath string, fileType string, editMsgId string, editMsgSent int, mentionsJson string) int {
 
 	LOG_TRACE("send message " + strconv.Itoa(connId) + ", " + chatId + ", " + text + ", " + quotedId + ", " + filePath + ", " + editMsgId)
@@ -3331,7 +3310,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 				}
 
 				videoMessage = waE2E.VideoMessage{
-					Caption:       proto.String(captionWithSize(text, int64(len(data)))),
+					Caption:       proto.String(text),
 					URL:           proto.String(uploaded.URL),
 					DirectPath:    proto.String(uploaded.DirectPath),
 					MediaKey:      uploaded.MediaKey,
@@ -3374,7 +3353,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 				}
 
 				imageMessage = waE2E.ImageMessage{
-					Caption:       proto.String(captionWithSize(text, int64(len(data)))),
+					Caption:       proto.String(text),
 					URL:           proto.String(uploaded.URL),
 					DirectPath:    proto.String(uploaded.DirectPath),
 					MediaKey:      uploaded.MediaKey,
@@ -3419,7 +3398,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 				fileName := filepath.Base(filePath)
 
 				documentMessage = waE2E.DocumentMessage{
-					Caption:       proto.String(captionWithSize(text, int64(len(data)))),
+					Caption:       proto.String(text),
 					URL:           proto.String(uploaded.URL),
 					DirectPath:    proto.String(uploaded.DirectPath),
 					MediaKey:      uploaded.MediaKey,
