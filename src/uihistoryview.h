@@ -22,6 +22,7 @@ public:
 
 private:
   std::string GetTimeString(int64_t p_TimeSent);
+  std::string m_LastSelectedMsgId;
 
 private:
   WINDOW* m_PaddedWin = nullptr;

@@ -85,19 +85,6 @@ void UiHistoryView::Draw()
   werase(m_PaddedWin);
   wbkgd(m_PaddedWin, attributeTextNormal | colorPairTextRecv | ' ');
 
-  // by desgua to display image
-  static std::string m_LastSelectedMsgId;
-  if (!m_Model->GetSelectMessageActiveLocked())
-  {
-    if (!m_LastSelectedMsgId.empty())
-    {
-      m_LastSelectedMsgId = "";
-      std::string command = "nchat_display close &";
-      system(command.c_str());
-    }
-  }
-  // end by desgua
-
   m_HistoryShowCount = 0;
 
   bool firstMessage = true;
@@ -145,16 +132,6 @@ void UiHistoryView::Draw()
       }
 
       wlines = StrUtil::WordWrap(StrUtil::ToWString(text), m_PaddedW, false, false, false, 2);
-
-      // by desgua to display image
-      if (isSelectedMessage && m_LastSelectedMsgId != msg.id)
-      {
-        m_LastSelectedMsgId = msg.id;
-          std::string command = "nchat_display close &";
-          system(command.c_str());
-      }
-      // end by desgua to display image
-
     }
 
     // Quoted message
@@ -245,23 +222,42 @@ void UiHistoryView::Draw()
 
       std::wstring fileStr = attachmentIndicator + StrUtil::ToWString(fileName + fileStatus);
       wlines.insert(wlines.begin(), fileStr);
+    }
 
-      // by desgua to display image
-      if (isSelectedMessage && m_LastSelectedMsgId != msg.id)
+    // by desgua to display image
+    if (isSelectedMessage && m_LastSelectedMsgId != msg.id)
+    {
+      m_LastSelectedMsgId = msg.id;
+
+      bool hasDownloadedFile = false;
+      std::string filePath;
+
+      if (!msg.fileInfo.empty())
       {
-        m_LastSelectedMsgId = msg.id;
-
-        if (fileInfo.fileStatus == FileStatusDownloaded)
+        FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(msg.fileInfo);
+        if (fileInfo.fileStatus == FileStatusDownloaded && !fileInfo.filePath.empty())
         {
-          std::string filePath = fileInfo.filePath;
-          std::thread([filePath]() {
-            std::string command = "nchat_display \"" + filePath + "\" >/dev/null 2>&1 &";
-            std::system(command.c_str());
-          }).detach();
+          hasDownloadedFile = true;
+          filePath = fileInfo.filePath;
         }
       }
-      // end by desgua to display image
+
+      if (hasDownloadedFile)
+      {
+        std::thread([filePath]() {
+          std::string command = "nchat_display \"" + filePath + "\" >/dev/null 2>&1 &";
+          std::system(command.c_str());
+        }).detach();
+      }
+      else
+      {
+        // Plain text message or message without downloaded attachment
+        std::thread([]() {
+          std::system("nchat_display close >/dev/null 2>&1 &");
+        }).detach();
+      }
     }
+    // end by desgua to display image
 
     // Reactions
     int reactionLines = 0;
