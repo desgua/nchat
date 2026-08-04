@@ -2090,6 +2090,12 @@ func (handler *WmEventHandler) HandleImageMessage(messageInfo types.MessageInfo,
 	ResetTypingStatus(connId, chatId, senderId, fromMe, isSyncRead)
 	handler.ProcessMessageInfo(messageInfo)
 
+	// add attachment size to the caption
+	fileSize := msg.GetImageMessage().GetFileLength()
+	if fileSize > 0 {
+		text = fmt.Sprintf("%s [%s]", text, formatBytes(fileSize))
+	}
+
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: image", chatId))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
 		BoolToInt(isRead), BoolToInt(isEdited))
@@ -2150,6 +2156,12 @@ func (handler *WmEventHandler) HandleVideoMessage(messageInfo types.MessageInfo,
 	ResetTypingStatus(connId, chatId, senderId, fromMe, isSyncRead)
 	handler.ProcessMessageInfo(messageInfo)
 
+	// add attachment size to the caption
+	fileSize := msg.GetVideoMessage().GetFileLength()
+	if fileSize > 0 {
+		text = fmt.Sprintf("%s [%s]", text, formatBytes(fileSize))
+	}
+
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: video", chatId))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
 		BoolToInt(isRead), BoolToInt(isEdited))
@@ -2206,9 +2218,28 @@ func (handler *WmEventHandler) HandleAudioMessage(messageInfo types.MessageInfo,
 	ResetTypingStatus(connId, chatId, senderId, fromMe, isSyncRead)
 	handler.ProcessMessageInfo(messageInfo)
 
+	// add attachment size to the caption
+	fileSize := msg.GetAudioMessage().GetFileLength()
+	if fileSize > 0 {
+		text = fmt.Sprintf("%s [%s]", text, formatBytes(fileSize))
+	}
+
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: audio", chatId))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
 		BoolToInt(isRead), BoolToInt(isEdited))
+}
+
+func formatBytes(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := uint64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 func (handler *WmEventHandler) HandleDocumentMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
@@ -2260,6 +2291,13 @@ func (handler *WmEventHandler) HandleDocumentMessage(messageInfo types.MessageIn
 	handler.ProcessMessageInfo(messageInfo)
 
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: document", chatId))
+
+	// add attachment size to the caption
+	fileSize := msg.GetDocumentMessage().GetFileLength()
+	if fileSize > 0 {
+		text = fmt.Sprintf("%s [%s]", text, formatBytes(fileSize))
+	}
+
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
 		BoolToInt(isRead), BoolToInt(isEdited))
 }
