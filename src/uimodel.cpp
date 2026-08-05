@@ -4815,6 +4815,8 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationEnd = UiKeyConfig::GetKey("vim_navigation_end");
   static wint_t keyVimNavigationEnter = UiKeyConfig::GetKey("ok");
   static wint_t keyVimNavigationFocusEntry = UiKeyConfig::GetKey("vim_navigation_focus_entry");
+  static wint_t keyVimNavigationFocusHistory = UiKeyConfig::GetKey("vim_navigation_focus_history");
+  static wint_t keyVimNavigationFocusList = UiKeyConfig::GetKey("vim_navigation_focus_list");
   static wint_t keyVimNavigationQuit = UiKeyConfig::GetKey("vim_navigation_quit");
   static wint_t keyPrevPage = UiKeyConfig::GetKey("prev_page");
   static wint_t keyNextPage = UiKeyConfig::GetKey("next_page");
@@ -5169,6 +5171,10 @@ void UiModel::KeyHandler(wint_t p_Key)
       {
         GetImpl().OnKeyNextFrame();
       }
+      else if (p_Key == keyVimNavigationFocusList)
+      {
+        GetImpl().OnKeyPrevFrame();
+      }
     }
     else if (isListFocused)
     {
@@ -5176,10 +5182,25 @@ void UiModel::KeyHandler(wint_t p_Key)
       {
         GetImpl().OnKeyPrevFrame();
       }
+      else if (p_Key == keyVimNavigationFocusHistory)
+      {
+        GetImpl().OnKeyNextFrame();
+      }
     }
     else if (isEntryFocused)
     {
-      GetImpl().EntryKeyHandler(p_Key);
+      if (p_Key == keyVimNavigationFocusList)
+      {
+        GetImpl().OnKeyNextFrame();
+      }
+      else if (p_Key == keyVimNavigationFocusHistory)
+      {
+        GetImpl().OnKeyPrevFrame();
+      }
+      else
+      {
+        GetImpl().EntryKeyHandler(p_Key);
+      }
     }
   }
 }
