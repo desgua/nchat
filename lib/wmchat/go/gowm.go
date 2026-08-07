@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"encoding/hex"
 	"math"
 	"mime"
 	"os"
@@ -86,6 +87,7 @@ var (
 	sendTypes   map[int]int                  = make(map[int]int)
 	namesSynced map[int]bool                 = make(map[int]bool)
 	passkeyWait map[int]bool                 = make(map[int]bool)
+	pollOptions map[int]map[string]string    = make(map[int]map[string]string)
 )
 
 // keep in sync with enum AttachmentSendType in appconfig.h
@@ -154,6 +156,7 @@ func AddConn(conn *whatsmeow.Client, path string, sendType int) int {
 	paths[connId] = path
 	contacts[connId], _ = LoadMap(GetContactsStorePath(path))
 	senders[connId], _ = LoadMap(GetSendersStorePath(path))
+	pollOptions[connId], _ = LoadMap(GetPollOptionsStorePath(path))
 	states[connId] = None
 	timeReads[connId] = make(map[string]time.Time)
 	expirations[connId] = make(map[string]uint32)
@@ -1699,6 +1702,36 @@ func SanitizePhoneNumber(phoneNumber string) string {
 	return rePhone.ReplaceAllString(phoneNumber, "")
 }
 
+// by kana: helper for poll update
+func (handler *WmEventHandler) getClient() *whatsmeow.Client {
+	mx.Lock()
+	defer mx.Unlock()
+	return clients[handler.connId]
+}
+
+// by kana: helper for poll update
+func GetPollOptionsStorePath(path string) string {
+	return filepath.Join(path, "polloptions")
+}
+
+// by kana: helper for poll update
+func cachePollOptions(connId int, pollMsgID string, options []string) {
+	hashes := whatsmeow.HashPollOptions(options)
+
+	mx.Lock()
+	for i, h := range hashes {
+		key := pollMsgID + ":" + hex.EncodeToString(h)
+		pollOptions[connId][key] = options[i]
+	}
+	snapshot := pollOptions[connId]
+	path := paths[connId]
+	mx.Unlock()
+
+	if err := SaveMap(GetPollOptionsStorePath(path), snapshot); err != nil {
+		LOG_TRACE(fmt.Sprintf("failed to save poll options: %v", err))
+	}
+}
+
 func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
 	switch {
 	case msg.Conversation != nil || msg.ExtendedTextMessage != nil:
@@ -1819,10 +1852,8 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
 
 	case msg.PollCreationMessage != nil || msg.PollCreationMessageV2 != nil || msg.PollCreationMessageV3 != nil:
-		// Extract the actual poll struct regardless of the protocol version
 		var name string
 		var options []string
-
 		if poll := msg.GetPollCreationMessage(); poll != nil {
 			name = poll.GetName()
 			for _, opt := range poll.GetOptions() {
@@ -1839,21 +1870,47 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 				options = append(options, opt.GetOptionName())
 			}
 		}
-
-		// Format into a readable string for nchat terminal UI
+		cachePollOptions(handler.connId, messageInfo.ID, options)
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("[Poll] %s\n", name))
 		for i, opt := range options {
 			sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, opt))
 		}
-
 		pollText := strings.TrimSpace(sb.String())
 		msg.Conversation = &pollText
 		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
 
 	case msg.PollUpdateMessage != nil:
-		// Poll updates represent user votes (which are encrypted in WhatsApp E2EE)
 		pollVoteText := "[Poll Vote Update]"
+		if cli := handler.getClient(); cli == nil {
+			LOG_TRACE("poll vote: no whatsmeow client for connId")
+		} else {
+			evt := &events.Message{Info: messageInfo, Message: msg}
+			vote, err := cli.DecryptPollVote(context.Background(), evt)
+			if err != nil {
+				LOG_TRACE(fmt.Sprintf("poll vote decrypt failed: %v", err))
+			} else {
+				pollMsgID := msg.PollUpdateMessage.GetPollCreationMessageKey().GetID()
+				mx.Lock()
+				optMap := pollOptions[handler.connId]
+				mx.Unlock()
+				var chosen []string
+				for _, h := range vote.GetSelectedOptions() {
+					key := pollMsgID + ":" + hex.EncodeToString(h)
+					if name, ok := optMap[key]; ok {
+						chosen = append(chosen, name)
+					}
+				}
+				switch {
+				case len(vote.GetSelectedOptions()) == 0:
+					pollVoteText = "[Poll Vote] (vote retracted)"
+				case len(chosen) > 0:
+					pollVoteText = fmt.Sprintf("[Poll Vote] %s", strings.Join(chosen, ", "))
+				default:
+					pollVoteText = "[Poll Vote] (option unknown — poll not seen this session)"
+				}
+			}
+		}
 		msg.Conversation = &pollVoteText
 		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
 
