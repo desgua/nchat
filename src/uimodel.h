@@ -112,6 +112,7 @@ private:
     bool IsContactSelf(const std::string& p_ProfileId, const std::string& p_ContactId);
     int64_t GetLastMessageTime(const std::string& p_ProfileId, const std::string& p_ChatId);
     bool GetChatIsUnread(const std::string& p_ProfileId, const std::string& p_ChatId);
+    int GetUnreadCount();
     std::string GetChatStatus(const std::string& p_ProfileId, const std::string& p_ChatId);
 
     std::wstring& GetEntryStr();
@@ -365,6 +366,7 @@ public:
 
   // Locked methods require caller to hold model mutex (intended for Ui*View classes)
   bool GetChatIsUnreadLocked(const std::string& p_ProfileId, const std::string& p_ChatId);
+  int GetUnreadCountLocked();
   std::string GetChatStatusLocked(const std::string& p_ProfileId, const std::string& p_ChatId);
   std::vector<std::pair<std::string, std::string>>& GetChatVecLocked();
   std::string GetContactListNameLocked(const std::string& p_ProfileId, const std::string& p_ChatId, bool p_AllowId,

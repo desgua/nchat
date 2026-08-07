@@ -658,6 +658,25 @@ void UiModel::Impl::OnKeyPrevChat()
   SetSelectMessageActive(false);
 }
 
+int UiModel::Impl::GetUnreadCount()
+{
+  int unreadCount = 0;
+  for (const auto& chat : m_ChatVec)
+  {
+    if (GetChatIsUnread(chat.first, chat.second))
+    {
+      ++unreadCount;
+    }
+  }
+  return unreadCount;
+}
+
+int UiModel::GetUnreadCountLocked()
+{
+  nc_assert(m_ModelMutex.owns_lock());
+  return GetImpl().GetUnreadCount();
+}
+
 void UiModel::Impl::OnKeyNextUnreadChat()
 {
   AnyUserKeyInput();

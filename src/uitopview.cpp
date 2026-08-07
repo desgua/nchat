@@ -28,8 +28,13 @@ void UiTopView::Draw()
 
   static uint32_t lastStatus = 0;
   uint32_t status = Status::Get(statusMask);
-  m_Dirty |= (status != lastStatus);
+
+  static int lastUnreadCount = -1;
+  int unreadCount = m_Model->GetUnreadCountLocked();
+
+  m_Dirty |= (status != lastStatus) || (unreadCount != lastUnreadCount);
   lastStatus = status;
+  lastUnreadCount = unreadCount;
 
   if (!m_Dirty) return;
   m_Dirty = false;
@@ -66,8 +71,9 @@ void UiTopView::Draw()
 
   static const bool topShowVersion = UiConfig::GetBool("top_show_version");
   static const std::string appNameVersion = AppUtil::GetAppName(topShowVersion);
+  const std::string unreadStr = (unreadCount > 0) ? ("[" + std::to_string(unreadCount) + "] ") : "";
   const std::string statusStr = Status::ToString(status) + statusSuffixStr;
-  std::wstring topWStrLeft = StrUtil::ToWString(std::string(topPadLeft, ' ') + appNameVersion);
+  std::wstring topWStrLeft = StrUtil::ToWString(std::string(topPadLeft, ' ') + unreadStr + appNameVersion);
   std::wstring topWStrRight = StrUtil::ToWString(statusStr + std::string(topPadRight, ' '));
   int topStrLeftWidth = StrUtil::WStringWidth(topWStrLeft);
   int topStrRightWidth = StrUtil::WStringWidth(topWStrRight);
