@@ -2174,6 +2174,7 @@ func (handler *WmEventHandler) HandleVideoMessage(messageInfo types.MessageInfo,
 		// video note / ptv
 		vid = msg.GetPtvMessage()
 	}
+
 	if vid == nil {
 		LOG_WARNING(fmt.Sprintf("get video message failed"))
 		return
@@ -2188,6 +2189,12 @@ func (handler *WmEventHandler) HandleVideoMessage(messageInfo types.MessageInfo,
 	secs := durationSec % 60
 	durationStr := fmt.Sprintf("🎥 [%02d:%02d]", mins, secs)
 	text := durationStr
+
+	// caption
+	caption := vid.GetCaption()
+	if caption != "" {
+		text = fmt.Sprintf("%s %s", caption, text)
+	}
 
 	// context
 	quotedId := ""
