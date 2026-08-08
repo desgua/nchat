@@ -2182,9 +2182,12 @@ func (handler *WmEventHandler) HandleVideoMessage(messageInfo types.MessageInfo,
 	// get extension
 	ext := ExtensionByType(vid.GetMimetype(), ".mp4")
 
-	// text
-	text := vid.GetCaption()
-	isEdited := (messageInfo.Edit == "1")
+	// duration
+	durationSec := vid.GetSeconds()
+	mins := durationSec / 60
+	secs := durationSec % 60
+	durationStr := fmt.Sprintf("🎥 [%02d:%02d]", mins, secs)
+	text := durationStr
 
 	// context
 	quotedId := ""
@@ -2195,6 +2198,7 @@ func (handler *WmEventHandler) HandleVideoMessage(messageInfo types.MessageInfo,
 	filePath := ""
 	fileId := ""
 	fileStatus := FileStatusNotDownloaded
+	isEdited := (messageInfo.Edit == "1")
 	if !isEdited {
 		var tmpPath string = GetPath(connId) + "/tmp"
 		filePath = fmt.Sprintf("%s/%s%s", tmpPath, messageInfo.ID, ext)
