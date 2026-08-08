@@ -2187,7 +2187,7 @@ func (handler *WmEventHandler) HandleVideoMessage(messageInfo types.MessageInfo,
 	durationSec := vid.GetSeconds()
 	mins := durationSec / 60
 	secs := durationSec % 60
-	durationStr := fmt.Sprintf("🎥 [%02d:%02d]", mins, secs)
+	durationStr := fmt.Sprintf("🎥 (%02d:%02d)", mins, secs)
 	text := durationStr
 
 	// caption
@@ -2259,7 +2259,7 @@ func (handler *WmEventHandler) HandleAudioMessage(messageInfo types.MessageInfo,
 	durationSec := aud.GetSeconds()
 	mins := durationSec / 60
 	secs := durationSec % 60
-	durationStr := fmt.Sprintf("🔊 [%02d:%02d]", mins, secs)
+	durationStr := fmt.Sprintf("🔊 (%02d:%02d)", mins, secs)
 	text := durationStr
 
 	// context
