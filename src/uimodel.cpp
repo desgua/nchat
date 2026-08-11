@@ -1520,11 +1520,9 @@ void UiModel::Impl::RunProgram(const std::string& p_Cmd)
   }
 }
 
-void UiModel::Impl::OnKeyOpenLink()
+bool UiModel::Impl::GetMessageLinks(std::string& p_LinkChatId, std::vector<std::string>& p_MsgUrls)
 {
-  AnyUserKeyInput();
-
-  if (!GetSelectMessageActive()) return;
+  if (!GetSelectMessageActive()) return false;
 
   std::string profileId = m_CurrentChat.first;
   std::string chatId = m_CurrentChat.second;
@@ -1536,19 +1534,34 @@ void UiModel::Impl::OnKeyOpenLink()
   if (it == messageVec.end())
   {
     LOG_WARNING("error finding message id");
-    return;
+    return false;
   }
 
-  std::string msgId = *it;
-  auto mit = messages.find(msgId);
+  auto mit = messages.find(*it);
   if (mit == messages.end())
   {
     LOG_WARNING("error finding message");
+    return false;
+  }
+
+  p_MsgUrls = StrUtil::ExtractUrlsFromStr(mit->second.text);
+  p_LinkChatId = mit->second.link;
+  return !p_LinkChatId.empty() || !p_MsgUrls.empty();
+}
+
+void UiModel::Impl::OnKeyOpenLink()
+{
+  AnyUserKeyInput();
+
+  std::string linkChatId;
+  std::vector<std::string> msgUrls;
+  if (!GetMessageLinks(linkChatId, msgUrls))
+  {
+    LOG_WARNING("message does not contain a link");
     return;
   }
 
-  std::vector<std::string> msgUrls = StrUtil::ExtractUrlsFromStr(mit->second.text);
-  const std::string linkChatId = mit->second.link;
+  std::string profileId = m_CurrentChat.first;
   if (!linkChatId.empty())
   {
     LOG_DEBUG("create chat %s", linkChatId.c_str());
@@ -1557,7 +1570,7 @@ void UiModel::Impl::OnKeyOpenLink()
     SendProtocolRequest(profileId, createChatRequest);
     SetSelectMessageActive(false);
   }
-  else if (!msgUrls.empty())
+  else
   {
     for (const auto& msgUrl : msgUrls)
     {
@@ -1565,10 +1578,29 @@ void UiModel::Impl::OnKeyOpenLink()
       OpenLink(msgUrl);
     }
   }
-  else
+}
+
+void UiModel::Impl::OnKeyOpen()
+{
+  AnyUserKeyInput();
+  if (!GetSelectMessageActive() || GetEditMessageActive()) return;
+
+  std::string filePath;
+  if (GetMessageAttachmentPath(filePath, DownloadFileActionOpen))
   {
-    LOG_WARNING("message does not contain a link");
+    OnKeyOpenAttachment(filePath);
+    return;
   }
+
+  std::string linkChatId;
+  std::vector<std::string> msgUrls;
+  if (GetMessageLinks(linkChatId, msgUrls))
+  {
+    OnKeyOpenLink();
+    return;
+  }
+
+  OnKeyOpenMsg();
 }
 
 std::string UiModel::Impl::OnKeySaveAttachment(std::string p_FilePath /*= std::string()*/)
@@ -4837,6 +4869,7 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationFocusHistory = UiKeyConfig::GetKey("vim_navigation_focus_history");
   static wint_t keyVimNavigationFocusList = UiKeyConfig::GetKey("vim_navigation_focus_list");
   static wint_t keyVimNavigationQuit = UiKeyConfig::GetKey("vim_navigation_quit");
+  static wint_t keyVimNavigationOpenAny = UiKeyConfig::GetKey("vim_navigation_open_any");
   static wint_t keyPrevPage = UiKeyConfig::GetKey("prev_page");
   static wint_t keyNextPage = UiKeyConfig::GetKey("next_page");
   static wint_t keyEnd = UiKeyConfig::GetKey("end");
@@ -5056,6 +5089,11 @@ void UiModel::KeyHandler(wint_t p_Key)
   else if (p_Key == keyPin)
   {
     OnKeyPin();
+  }
+  else if (isHistoryFocused && p_Key == keyVimNavigationOpenAny)
+  {
+    std::unique_lock<owned_mutex> lock(m_ModelMutex);
+    GetImpl().OnKeyOpen();
   }
   else if (p_Key == keyOpen || (isHistoryFocused && p_Key == keyVimNavigationOpen))
   {

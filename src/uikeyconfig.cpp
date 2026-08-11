@@ -257,6 +257,7 @@ void UiKeyConfig::Init(bool p_MapKeys)
     { "vim_navigation_focus_history", "" },
     { "vim_navigation_focus_list", "" },
     { "vim_navigation_quit", "" },
+    { "vim_navigation_open_any", "" },
     { "next_unread_chat", "KEY_NONE" }, // alt/opt-y
     { "prev_unread_chat", "KEY_NONE" }, // alt/opt-o
     { "open_profile_photo", "KEY_NONE" },

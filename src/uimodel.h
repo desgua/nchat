@@ -79,6 +79,8 @@ private:
     bool RunCommand(const std::string& p_Cmd, std::string* p_StdOut = nullptr);
     void RunProgram(const std::string& p_Cmd);
     void OnKeyOpenLink();
+    bool GetMessageLinks(std::string& p_LinkChatId, std::vector<std::string>& p_MsgUrls);
+    void OnKeyOpen();
     std::string OnKeySaveAttachment(std::string p_FilePath = std::string());
     void TransferFile(const std::vector<std::string>& p_FilePaths);
     void InsertEmoji(const std::wstring& p_Emoji);
