@@ -313,7 +313,7 @@ void UiHistoryView::Draw()
           if (emojiCount->second == selfEmoji)
           {
             // Highlight own reaction emoji
-            reactionsText += "" + emojiCount->second + "*";
+            reactionsText += "" + emojiCount->second + " [me]";
           }
           else
           {

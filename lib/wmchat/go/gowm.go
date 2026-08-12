@@ -2543,6 +2543,14 @@ func (handler *WmEventHandler) HandleReactionMessage(messageInfo types.MessageIn
 	text := reaction.GetText()
 	msgId := reaction.GetKey().GetID()
 
+	if text != "" {
+		var senderName string
+		if !fromMe {
+			senderName = GetContactName(connId, senderId)
+		text = fmt.Sprintf("%s[%s]", text, senderName)
+		}
+	}
+
 	CWmNewMessageReactionNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe))
 
 	// @todo: add auto-marking reactions of read, investigate why below does not work
