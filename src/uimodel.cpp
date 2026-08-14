@@ -4945,6 +4945,8 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationFind = UiKeyConfig::GetKey("vim_navigation_find");
   static wint_t keyVimNavigationFindNext = UiKeyConfig::GetKey("vim_navigation_find_next");
   static wint_t keyVimNavigationFindPrev = UiKeyConfig::GetKey("vim_navigation_find_prev");
+  static wint_t keyVimNavigationExtCall = UiKeyConfig::GetKey("vim_navigation_ext_call");
+
   static wint_t keyPrevPage = UiKeyConfig::GetKey("prev_page");
   static wint_t keyNextPage = UiKeyConfig::GetKey("next_page");
   static wint_t keyEnd = UiKeyConfig::GetKey("end");
@@ -5253,7 +5255,7 @@ void UiModel::KeyHandler(wint_t p_Key)
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyOpenMsg();
   }
-  else if (p_Key == keyExtCall)
+  else if (p_Key == keyExtCall || (isListFocused && p_Key == keyVimNavigationExtCall) || (isHistoryFocused && p_Key == keyVimNavigationExtCall))
   {
     OnKeyExtCall();
   }
