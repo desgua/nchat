@@ -743,7 +743,7 @@ bool MessageCache::GetOneMessage(const std::string& p_ProfileId, const std::stri
 void MessageCache::FindMessage(const std::string& p_ProfileId, const std::string& p_ChatId,
                                const std::string& p_FromMsgId, const std::string& p_LastMsgId,
                                const std::string& p_FindText, const std::string& p_FindMsgId,
-                               bool p_FindPinned)
+                               bool p_FindPinned, bool p_Reverse)
 {
   if (!m_CacheEnabled) return;
 
@@ -756,6 +756,7 @@ void MessageCache::FindMessage(const std::string& p_ProfileId, const std::string
   findCachedMessageRequest->findText = p_FindText;
   findCachedMessageRequest->findMsgId = p_FindMsgId;
   findCachedMessageRequest->findPinned = p_FindPinned;
+  findCachedMessageRequest->reverse = p_Reverse;
   EnqueueRequest(findCachedMessageRequest);
 }
 
@@ -1516,6 +1517,7 @@ void MessageCache::PerformRequest(std::shared_ptr<Request> p_Request)
         const std::string& findText = findCachedMessageRequest->findText;
         const std::string& findMsgId = findCachedMessageRequest->findMsgId;
         const bool findPinned = findCachedMessageRequest->findPinned;
+        const bool reverse = findCachedMessageRequest->reverse;
 
         int64_t findFromMsgIdTimeSent = 0;
         if (!fromMsgId.empty())
@@ -1538,7 +1540,8 @@ void MessageCache::PerformRequest(std::shared_ptr<Request> p_Request)
         }
         else
         {
-          findFromMsgIdTimeSent = std::numeric_limits<int64_t>::max();
+          findFromMsgIdTimeSent = reverse ? std::numeric_limits<int64_t>::min()
+                                          : std::numeric_limits<int64_t>::max();
         }
 
         std::string foundMsgId;
@@ -1553,10 +1556,10 @@ void MessageCache::PerformRequest(std::shared_ptr<Request> p_Request)
               "FROM " + s_TableMessages + " "
               "LEFT JOIN " + s_TableContacts + " "
               "ON " + s_TableMessages + ".senderId = " + s_TableContacts + ".id "
-              "WHERE chatId = ? AND timeSent < ? "
+              "WHERE chatId = ? AND timeSent " + (reverse ? "> ?" : "< ?") + " "
               "AND ((instr(ncfold(text), ncfold(?)) > 0) OR "
               "     (instr(ncfold(CASE WHEN isSelf THEN 'You' ELSE name END), ncfold(?)) > 0)) "
-              "ORDER BY timeSent DESC LIMIT 1;"
+              "ORDER BY timeSent " + (reverse ? "ASC" : "DESC") + " LIMIT 1;"
               << chatId << findFromMsgIdTimeSent << findText << findText >>
               [&](const std::string& id, const int64_t& timeSent)
               {
@@ -1616,78 +1619,94 @@ void MessageCache::PerformRequest(std::shared_ptr<Request> p_Request)
 
         if (!foundMsgId.empty())
         {
-          int64_t fetchFromMsgIdTimeSent = 0;
-          const std::string& lastMsgId = findCachedMessageRequest->lastMsgId;
-          if (!lastMsgId.empty())
+          if (reverse)
           {
-            try
-            {
-              // *INDENT-OFF*
-              *m_Dbs[profileId] << "SELECT timeSent FROM " + s_TableMessages + " WHERE chatId = ? AND id = ?;" <<
-                chatId << lastMsgId >>
-                [&](const int64_t& timeSent)
-                {
-                  fetchFromMsgIdTimeSent = timeSent;
-                };
-              // *INDENT-ON*
-            }
-            catch (const sqlite::sqlite_exception& ex)
-            {
-              HANDLE_SQLITE_EXCEPTION(ex);
-            }
+            // Reverse (toward newer messages): the match is expected to already be
+            // within the currently-loaded window, so skip the older-message gap-fill
+            // used by forward search and just report the hit.
+            lock.unlock();
+
+            std::shared_ptr<FindMessageNotify> findMessageNotify = std::make_shared<FindMessageNotify>(profileId);
+            findMessageNotify->success = true;
+            findMessageNotify->chatId = chatId;
+            findMessageNotify->msgId = foundMsgId;
+            CallMessageHandler(findMessageNotify);
           }
           else
           {
-            fetchFromMsgIdTimeSent = std::numeric_limits<int64_t>::max();
-          }
-
-          int limit = 0;
-          if (fetchFromMsgIdTimeSent > foundMsgIdTimeSent)
-          {
-            // Determine number of messages to fetch
-            try
+            int64_t fetchFromMsgIdTimeSent = 0;
+            const std::string& lastMsgId = findCachedMessageRequest->lastMsgId;
+            if (!lastMsgId.empty())
             {
-              // *INDENT-OFF*
-              *m_Dbs[profileId] << "SELECT COUNT(id) FROM " + s_TableMessages + " WHERE chatId = ? AND timeSent < ? AND timeSent >= ?;" <<
-                chatId << fetchFromMsgIdTimeSent << foundMsgIdTimeSent >>
-                [&](const int64_t& count)
-                {
-                  limit = count;
-                };
-              // *INDENT-ON*
+              try
+              {
+                // *INDENT-OFF*
+                *m_Dbs[profileId] << "SELECT timeSent FROM " + s_TableMessages + " WHERE chatId = ? AND id = ?;" <<
+                  chatId << lastMsgId >>
+                  [&](const int64_t& timeSent)
+                  {
+                    fetchFromMsgIdTimeSent = timeSent;
+                  };
+                // *INDENT-ON*
+              }
+              catch (const sqlite::sqlite_exception& ex)
+              {
+                HANDLE_SQLITE_EXCEPTION(ex);
+              }
             }
-            catch (const sqlite::sqlite_exception& ex)
+            else
             {
-              HANDLE_SQLITE_EXCEPTION(ex);
+              fetchFromMsgIdTimeSent = std::numeric_limits<int64_t>::max();
             }
+
+            int limit = 0;
+            if (fetchFromMsgIdTimeSent > foundMsgIdTimeSent)
+            {
+              // Determine number of messages to fetch
+              try
+              {
+                // *INDENT-OFF*
+                *m_Dbs[profileId] << "SELECT COUNT(id) FROM " + s_TableMessages + " WHERE chatId = ? AND timeSent < ? AND timeSent >= ?;" <<
+                  chatId << fetchFromMsgIdTimeSent << foundMsgIdTimeSent >>
+                  [&](const int64_t& count)
+                  {
+                    limit = count;
+                  };
+                // *INDENT-ON*
+              }
+              catch (const sqlite::sqlite_exception& ex)
+              {
+                HANDLE_SQLITE_EXCEPTION(ex);
+              }
+            }
+
+            std::vector<ChatMessage> chatMessages;
+            if (limit > 0)
+            {
+              // @todo: consider not fetching cache with "gaps" when isSequence = 0 is encountered.
+              PerformFetchMessagesFrom(profileId, chatId, fetchFromMsgIdTimeSent, limit, chatMessages);
+            }
+
+            lock.unlock();
+
+            if (!chatMessages.empty())
+            {
+              std::shared_ptr<NewMessagesNotify> newMessagesNotify = std::make_shared<NewMessagesNotify>(profileId);
+              newMessagesNotify->success = true;
+              newMessagesNotify->chatId = chatId;
+              newMessagesNotify->chatMessages = chatMessages;
+              newMessagesNotify->fromMsgId = lastMsgId;
+              newMessagesNotify->cached = true;
+              newMessagesNotify->sequence = true; // in-sequence history request
+              CallMessageHandler(newMessagesNotify);
+            }
+
+            std::shared_ptr<FindMessageNotify> findMessageNotify = std::make_shared<FindMessageNotify>(profileId);
+            findMessageNotify->success = true;
+            findMessageNotify->chatId = chatId;
+            findMessageNotify->msgId = foundMsgId;
+            CallMessageHandler(findMessageNotify);
           }
-
-          std::vector<ChatMessage> chatMessages;
-          if (limit > 0)
-          {
-            // @todo: consider not fetching cache with "gaps" when isSequence = 0 is encountered.
-            PerformFetchMessagesFrom(profileId, chatId, fetchFromMsgIdTimeSent, limit, chatMessages);
-          }
-
-          lock.unlock();
-
-          if (!chatMessages.empty())
-          {
-            std::shared_ptr<NewMessagesNotify> newMessagesNotify = std::make_shared<NewMessagesNotify>(profileId);
-            newMessagesNotify->success = true;
-            newMessagesNotify->chatId = chatId;
-            newMessagesNotify->chatMessages = chatMessages;
-            newMessagesNotify->fromMsgId = lastMsgId;
-            newMessagesNotify->cached = true;
-            newMessagesNotify->sequence = true; // in-sequence history request
-            CallMessageHandler(newMessagesNotify);
-          }
-
-          std::shared_ptr<FindMessageNotify> findMessageNotify = std::make_shared<FindMessageNotify>(profileId);
-          findMessageNotify->success = true;
-          findMessageNotify->chatId = chatId;
-          findMessageNotify->msgId = foundMsgId;
-          CallMessageHandler(findMessageNotify);
         }
         else
         {

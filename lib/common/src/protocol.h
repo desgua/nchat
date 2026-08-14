@@ -456,6 +456,7 @@ public:
   std::string findText;
   std::string findMsgId;
   bool findPinned = false;
+  bool reverse = false;
 };
 
 class GetGroupMembersRequest : public RequestMessage

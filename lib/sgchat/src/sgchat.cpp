@@ -680,7 +680,8 @@ void SgChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
                                   findMessageRequest->lastMsgId,
                                   findMessageRequest->findText,
                                   findMessageRequest->findMsgId,
-                                  findMessageRequest->findPinned);
+                                  findMessageRequest->findPinned,
+                                  findMessageRequest->reverse);
       }
       break;
 

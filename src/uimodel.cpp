@@ -2613,15 +2613,18 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
 
     case FindMessageNotifyType:
       {
-        SetFindMessageActive(false);
         std::shared_ptr<FindMessageNotify> findMessageNotify =
           std::static_pointer_cast<FindMessageNotify>(p_ServiceMessage);
-        bool success = findMessageNotify->success;
         std::string chatId = findMessageNotify->chatId;
         std::string msgId = findMessageNotify->msgId;
-        LOG_TRACE("find message notify %s %s", (success ? "found" : "not found"), msgId.c_str());
+        LOG_TRACE("find message notify %s %s", (findMessageNotify->success ? "found" : "not found"), msgId.c_str());
+
         if (!msgId.empty())
         {
+          SetFindMessageActive(false);
+          m_FindMessageAllChats = false;
+          m_FindMessageReverse = false;
+
           const std::vector<std::string>& messageVec = m_MessageVec[profileId][chatId];
           int& messageOffset = m_MessageOffset[profileId][chatId];
           std::stack<int>& messageOffsetStack = m_MessageOffsetStack[profileId][chatId];
@@ -2646,8 +2649,24 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
             LOG_WARNING("message %s not available in ui", msgId.c_str());
           }
         }
+        else if (m_FindMessageAllChats && (m_FindMessageChatsLeft > 0))
+        {
+          --m_FindMessageChatsLeft;
+          if (m_FindMessageReverse)
+          {
+            OnKeyPrevChat();
+          }
+          else
+          {
+            OnKeyNextChat();
+          }
+          PerformFindNext(m_FindMessageSweepText, m_FindMessageReverse);
+        }
         else
         {
+          SetFindMessageActive(false);
+          m_FindMessageAllChats = false;
+          m_FindMessageReverse = false;
           m_TriggerTerminalBell = true;
         }
       }
@@ -4508,17 +4527,39 @@ void UiModel::Impl::OnKeyJumpPinned()
   SendProtocolRequest(profileId, findMessageRequest);
 }
 
-void UiModel::Impl::Find(const std::string& p_FindText)
+void UiModel::Impl::FindNext(const std::string& p_FindText)
 {
+  m_FindMessageSweepText = p_FindText;
+  const int chatCount = (int)m_ChatVec.size();
+  m_FindMessageChatsLeft = (chatCount > 0) ? (chatCount - 1) : 0;
+  m_FindMessageAllChats = true;
+  m_FindMessageReverse = false;
+
   if (!p_FindText.empty())
   {
-    PerformFindNext(p_FindText);
+    PerformFindNext(p_FindText, true);
   }
 
   ReinitView();
 }
 
-void UiModel::Impl::PerformFindNext(const std::string& p_FindText)
+void UiModel::Impl::FindPrev(const std::string& p_FindText)
+{
+  m_FindMessageSweepText = p_FindText;
+  const int chatCount = (int)m_ChatVec.size();
+  m_FindMessageChatsLeft = (chatCount > 0) ? (chatCount - 1) : 0;
+  m_FindMessageAllChats = true;
+  m_FindMessageReverse = true;
+
+  if (!p_FindText.empty())
+  {
+    PerformFindNext(p_FindText, false);
+  }
+
+  ReinitView();
+}
+
+void UiModel::Impl::PerformFindNext(const std::string& p_FindText, bool p_Reverse)
 {
   const std::string profileId = m_CurrentChat.first;
   const std::string chatId = m_CurrentChat.second;
@@ -4541,7 +4582,20 @@ void UiModel::Impl::PerformFindNext(const std::string& p_FindText)
   findMessageRequest->fromMsgId = fromMsgId;
   findMessageRequest->lastMsgId = oldestMessageId;
   findMessageRequest->findText = p_FindText;
+  findMessageRequest->reverse = p_Reverse;
   SendProtocolRequest(profileId, findMessageRequest);
+}
+
+void UiModel::Impl::Find(const std::string& p_FindText)
+{
+  m_FindMessageAllChats = false;
+  m_FindMessageReverse = false;
+  if (!p_FindText.empty())
+  {
+    PerformFindNext(p_FindText, false);
+  }
+
+  ReinitView();
 }
 
 void UiModel::Impl::ForwardMessage(const std::pair<std::string, std::string>& p_Chat)
@@ -4879,6 +4933,9 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationQuit = UiKeyConfig::GetKey("vim_navigation_quit");
   static wint_t keyVimNavigationOpenAny = UiKeyConfig::GetKey("vim_navigation_open_any");
   static wint_t keyVimNavigationNewContact = UiKeyConfig::GetKey("vim_navigation_new_contact");
+  static wint_t keyVimNavigationFind = UiKeyConfig::GetKey("vim_navigation_find");
+  static wint_t keyVimNavigationFindNext = UiKeyConfig::GetKey("vim_navigation_find_next");
+  static wint_t keyVimNavigationFindPrev = UiKeyConfig::GetKey("vim_navigation_find_prev");
   static wint_t keyPrevPage = UiKeyConfig::GetKey("prev_page");
   static wint_t keyNextPage = UiKeyConfig::GetKey("next_page");
   static wint_t keyEnd = UiKeyConfig::GetKey("end");
@@ -5194,13 +5251,17 @@ void UiModel::KeyHandler(wint_t p_Key)
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyJumpPinned();
   }
-  else if (p_Key == keyFind)
+  else if (p_Key == keyFind || (isHistoryFocused && p_Key == keyVimNavigationFind) || (isListFocused && p_Key == keyVimNavigationFind))
   {
     OnKeyFind();
   }
-  else if (p_Key == keyFindNext)
+  else if (p_Key == keyFindNext || (isHistoryFocused && p_Key == keyVimNavigationFindNext) || (isListFocused && p_Key == keyVimNavigationFindNext))
   {
     OnKeyFindNext();
+  }
+  else if ((isHistoryFocused && p_Key == keyVimNavigationFindPrev) || (isListFocused && p_Key == keyVimNavigationFindPrev))
+  {
+    OnKeyFindPrev();
   }
   else if (p_Key == keyForwardMsg || (isHistoryFocused && p_Key == keyVimNavigationForwardMsg))
   {
@@ -5897,7 +5958,20 @@ void UiModel::OnKeyFindNext()
 
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
-    GetImpl().Find(m_FindText);
+    GetImpl().FindNext(m_FindText);
+  }
+}
+
+void UiModel::OnKeyFindPrev()
+{
+  if (m_FindText.empty())
+  {
+    return;
+  }
+
+  {
+    std::unique_lock<owned_mutex> lock(m_ModelMutex);
+    GetImpl().FindPrev(m_FindText);
   }
 }
 

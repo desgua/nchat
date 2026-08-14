@@ -131,6 +131,7 @@ private:
     std::string findText;
     std::string findMsgId;
     bool findPinned = false;
+    bool reverse = false;
   };
 
   class DeleteOneMessageRequest : public Request
@@ -260,7 +261,7 @@ public:
                             const std::string& p_MsgId, std::vector<ChatMessage>& p_ChatMessages);
   static void FindMessage(const std::string& p_ProfileId, const std::string& p_ChatId, const std::string& p_FromMsgId,
                           const std::string& p_LastMsgId, const std::string& p_FindText,
-                          const std::string& p_FindMsgId, bool p_FindPinned);
+                          const std::string& p_FindMsgId, bool p_FindPinned, bool p_Reverse);
   static void DeleteOneMessage(const std::string& p_ProfileId, const std::string& p_ChatId, const std::string& p_MsgId);
   static void DeleteChat(const std::string& p_ProfileId, const std::string& p_ChatId);
   static void UpdateMessageIsRead(const std::string& p_ProfileId, const std::string& p_ChatId,

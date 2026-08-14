@@ -198,6 +198,8 @@ private:
     void SetReact(const std::string& p_ProfileId, const std::string& p_ChatId, const std::string& p_SenderId,
                   const std::string& p_MsgId, const std::string& p_SelfEmoji, const std::string& p_Emoji);
     void Find(const std::string& p_FindText);
+    void FindNext(const std::string& p_FindText);
+    void FindPrev(const std::string& p_FindText);
     void ForwardMessage(const std::pair<std::string, std::string>& p_Chat);
     void PerformForwardMessage(const std::pair<std::string, std::string>& p_Chat);
     bool IsProtocolUiControlActive();
@@ -245,7 +247,7 @@ private:
     void Quit();
     void EntryConvertEmojiEnabled();
     void SetProtocolUiControl(const std::string& p_ProfileId, bool& p_IsTakeControl);
-    void PerformFindNext(const std::string& p_FindText);
+    void PerformFindNext(const std::string& p_FindText, bool p_Reverse);
     bool IsChatForceHidden(const std::string& p_ChatId);
     bool IsChatForceMuted(const std::string& p_ChatId);
     void AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage);
@@ -307,6 +309,10 @@ private:
     bool m_MessageDialogActive = false;
     bool m_EditMessageActive = false;
     bool m_FindMessageActive = false;
+    bool m_FindMessageAllChats = false;
+    bool m_FindMessageReverse = false;
+    std::string m_FindMessageSweepText;
+    int m_FindMessageChatsLeft = 0;
 
     bool m_TriggerTerminalBell = false;
     bool m_HomeFetchAll = false;
@@ -432,6 +438,7 @@ private:
   void OnKeyReact();
   void OnKeyFind();
   void OnKeyFindNext();
+  void OnKeyFindPrev();
   void OnKeyForwardMsg();
   bool MessageDialog(const std::string& p_Title, const std::string& p_Text, float p_WReq, float p_HReq);
   void OnKeyDeleteMsg();
