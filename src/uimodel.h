@@ -200,6 +200,7 @@ private:
     void Find(const std::string& p_FindText);
     void FindNext(const std::string& p_FindText);
     void FindPrev(const std::string& p_FindText);
+    void FindAbort();
     void ForwardMessage(const std::pair<std::string, std::string>& p_Chat);
     void PerformForwardMessage(const std::pair<std::string, std::string>& p_Chat);
     bool IsProtocolUiControlActive();

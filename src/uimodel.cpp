@@ -4559,6 +4559,15 @@ void UiModel::Impl::FindPrev(const std::string& p_FindText)
   ReinitView();
 }
 
+void UiModel::Impl::FindAbort()
+{
+  m_FindMessageAllChats = false;
+  m_FindMessageReverse = false;
+  m_FindMessageChatsLeft = 0;
+  SetFindMessageActive(false);
+  ReinitView();
+}
+
 void UiModel::Impl::PerformFindNext(const std::string& p_FindText, bool p_Reverse)
 {
   const std::string profileId = m_CurrentChat.first;
@@ -5220,7 +5229,14 @@ void UiModel::KeyHandler(wint_t p_Key)
   else if (p_Key == keyCancel)
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
+    if (GetImpl().GetFindMessageActive())
+    {
+      GetImpl().FindAbort();
+    }
+    else
+    {
     GetImpl().OnKeyCancel();
+    }
   }
   else if (p_Key == keyDecreaseListWidth)
   {
