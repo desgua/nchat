@@ -258,8 +258,13 @@ void UiKeyConfig::Init(bool p_MapKeys)
     { "vim_navigation_focus_list", "" },
     { "vim_navigation_quit", "" },
     { "vim_navigation_open_any", "" },
-    { "next_unread_chat", "KEY_NONE" }, // alt/opt-y
-    { "prev_unread_chat", "KEY_NONE" }, // alt/opt-o
+    { "vim_navigation_find_all_input", "" },
+    { "vim_navigation_find_all_next", "" },
+    { "vim_navigation_find_all_prev", "" },
+    { "vim_navigation_new_contact", "" },
+    { "vim_navigation_open_select_contact", "" },
+    { "next_unread_chat", "KEY_NONE" },
+    { "prev_unread_chat", "KEY_NONE" },
     { "open_profile_photo", "KEY_NONE" },
     { "new_contact", "" },
     { "send_msg", "KEY_CTRLX" },

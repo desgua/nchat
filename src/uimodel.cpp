@@ -1393,6 +1393,14 @@ void UiModel::OnKeyNewContact()
       }
     }
 
+    if (digitsOnly.size() < 11)
+    {
+      MessageDialog("Warning", "Aborted because the number has less than 11 digits.", 0.7, 5);
+      std::unique_lock<owned_mutex> lock(m_ModelMutex);
+      GetImpl().ReinitView();
+      return;
+    }
+
     // 1. Already chatting with this number? Go straight there.
     std::string existingChatId;
     {
@@ -4870,6 +4878,7 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationFocusList = UiKeyConfig::GetKey("vim_navigation_focus_list");
   static wint_t keyVimNavigationQuit = UiKeyConfig::GetKey("vim_navigation_quit");
   static wint_t keyVimNavigationOpenAny = UiKeyConfig::GetKey("vim_navigation_open_any");
+  static wint_t keyVimNavigationNewContact = UiKeyConfig::GetKey("vim_navigation_new_contact");
   static wint_t keyPrevPage = UiKeyConfig::GetKey("prev_page");
   static wint_t keyNextPage = UiKeyConfig::GetKey("next_page");
   static wint_t keyEnd = UiKeyConfig::GetKey("end");
@@ -5015,7 +5024,7 @@ void UiModel::KeyHandler(wint_t p_Key)
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OpenProfilePhoto();
   }
-  else if (p_Key == keyNewContact)
+  else if (p_Key == keyNewContact || (isListFocused && p_Key == keyVimNavigationNewContact))
   {
     OnKeyNewContact();
   }
