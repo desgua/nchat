@@ -5122,7 +5122,7 @@ void UiModel::KeyHandler(wint_t p_Key)
       GetImpl().OnKeyHomeFetchNext();
     }
   }
-  else if (p_Key == keyEnd || (isListFocused && p_Key == keyVimNavigationEnd) || (isHistoryFocused && p_Key == keyVimNavigationEnd))
+  else if (p_Key == keyEnd || (!isEntryFocused && p_Key == keyVimNavigationEnd))
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyEnd();
@@ -5137,7 +5137,7 @@ void UiModel::KeyHandler(wint_t p_Key)
       return;
     }
   }
-  else if (p_Key == keyQuit || (isListFocused && p_Key == keyVimNavigationQuit) || (isHistoryFocused && p_Key == keyVimNavigationQuit))
+  else if (p_Key == keyQuit || (!isEntryFocused && p_Key == keyVimNavigationQuit))
   {
     OnKeyQuit();
   }
@@ -5255,7 +5255,7 @@ void UiModel::KeyHandler(wint_t p_Key)
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyOpenMsg();
   }
-  else if (p_Key == keyExtCall || (isListFocused && p_Key == keyVimNavigationExtCall) || (isHistoryFocused && p_Key == keyVimNavigationExtCall))
+  else if (p_Key == keyExtCall || (!isEntryFocused && p_Key == keyVimNavigationExtCall))
   {
     OnKeyExtCall();
   }
