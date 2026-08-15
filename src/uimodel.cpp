@@ -4537,7 +4537,7 @@ void UiModel::Impl::FindNext(const std::string& p_FindText)
 
   if (!p_FindText.empty())
   {
-    PerformFindNext(p_FindText, true);
+    PerformFindNext(p_FindText, false);
   }
 
   ReinitView();
@@ -4553,7 +4553,7 @@ void UiModel::Impl::FindPrev(const std::string& p_FindText)
 
   if (!p_FindText.empty())
   {
-    PerformFindNext(p_FindText, false);
+    PerformFindNext(p_FindText, true);
   }
 
   ReinitView();
@@ -5269,15 +5269,15 @@ void UiModel::KeyHandler(wint_t p_Key)
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyJumpPinned();
   }
-  else if (p_Key == keyFind || (isHistoryFocused && p_Key == keyVimNavigationFind) || (isListFocused && p_Key == keyVimNavigationFind))
+  else if (p_Key == keyFind || (!isEntryFocused && p_Key == keyVimNavigationFind))
   {
     OnKeyFind();
   }
-  else if (p_Key == keyFindNext || (isHistoryFocused && p_Key == keyVimNavigationFindNext) || (isListFocused && p_Key == keyVimNavigationFindNext))
+  else if (p_Key == keyFindNext || (!isEntryFocused && p_Key == keyVimNavigationFindNext))
   {
     OnKeyFindNext();
   }
-  else if ((isHistoryFocused && p_Key == keyVimNavigationFindPrev) || (isListFocused && p_Key == keyVimNavigationFindPrev))
+  else if (!isEntryFocused && p_Key == keyVimNavigationFindPrev)
   {
     OnKeyFindPrev();
   }
@@ -5985,6 +5985,14 @@ void UiModel::OnKeyFindPrev()
   if (m_FindText.empty())
   {
     return;
+  }
+
+  // Pre-req
+  {
+    std::unique_lock<owned_mutex> lock(m_ModelMutex);
+    if (GetImpl().GetEditMessageActive() || GetImpl().GetFindMessageActive()) return;
+
+    GetImpl().SetFindMessageActive(true);
   }
 
   {
