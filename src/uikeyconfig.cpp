@@ -262,7 +262,7 @@ void UiKeyConfig::Init(bool p_MapKeys)
     { "vim_navigation_find_next", "" },
     { "vim_navigation_find_prev", "" },
     { "vim_navigation_new_contact", "" },
-    { "vim_navigation_open_select_contact", "" },
+    { "vim_navigation_select_contact", "" },
     { "vim_navigation_ext_call", "" },
     { "next_unread_chat", "KEY_NONE" },
     { "prev_unread_chat", "KEY_NONE" },

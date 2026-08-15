@@ -4942,6 +4942,7 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationQuit = UiKeyConfig::GetKey("vim_navigation_quit");
   static wint_t keyVimNavigationOpenAny = UiKeyConfig::GetKey("vim_navigation_open_any");
   static wint_t keyVimNavigationNewContact = UiKeyConfig::GetKey("vim_navigation_new_contact");
+  static wint_t keyVimNavigationSelectContact = UiKeyConfig::GetKey("vim_navigation_select_contact");
   static wint_t keyVimNavigationFind = UiKeyConfig::GetKey("vim_navigation_find");
   static wint_t keyVimNavigationFindNext = UiKeyConfig::GetKey("vim_navigation_find_next");
   static wint_t keyVimNavigationFindPrev = UiKeyConfig::GetKey("vim_navigation_find_prev");
@@ -5194,7 +5195,7 @@ void UiModel::KeyHandler(wint_t p_Key)
   {
     OnKeySelectEmoji();
   }
-  else if (p_Key == keySelectContact)
+  else if (p_Key == keySelectContact || (!isEntryFocused && p_Key == keyVimNavigationSelectContact))
   {
     OnKeySelectContact();
   }
