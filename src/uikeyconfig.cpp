@@ -237,6 +237,8 @@ void UiKeyConfig::Init(bool p_MapKeys)
     { "prev_chat", "KEY_BTAB" },
     { "vim_navigation_next_frame", "" },
     { "vim_navigation_prev_frame", "" },
+    { "vim_navigation_left", "" },
+    { "vim_navigation_right", "" },
     { "vim_navigation_next", "" },
     { "vim_navigation_prev", "" },
     { "vim_navigation_next_unread", "" },

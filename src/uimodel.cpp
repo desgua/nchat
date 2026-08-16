@@ -4919,6 +4919,8 @@ void UiModel::KeyHandler(wint_t p_Key)
 {
   static wint_t keyNextFrame = UiKeyConfig::GetKey("vim_navigation_next_frame");
   static wint_t keyPrevFrame = UiKeyConfig::GetKey("vim_navigation_prev_frame");
+  static wint_t keyVimNavigationLeft = UiKeyConfig::GetKey("vim_navigation_left");
+  static wint_t keyVimNavigationRight = UiKeyConfig::GetKey("vim_navigation_right");
   static wint_t keyVimNavigationNext = UiKeyConfig::GetKey("vim_navigation_next");
   static wint_t keyVimNavigationPrev = UiKeyConfig::GetKey("vim_navigation_prev");
   static wint_t keyVimNavigationNextUnread = UiKeyConfig::GetKey("vim_navigation_next_unread");
@@ -5317,7 +5319,7 @@ void UiModel::KeyHandler(wint_t p_Key)
       {
         GetImpl().OnKeyNextFrame();
       }
-      else if (p_Key == keyVimNavigationFocusList)
+      else if ((p_Key == keyVimNavigationFocusList) || (p_Key == keyVimNavigationLeft))
       {
         GetImpl().OnKeyPrevFrame();
       }
@@ -5328,7 +5330,7 @@ void UiModel::KeyHandler(wint_t p_Key)
       {
         GetImpl().OnKeyPrevFrame();
       }
-      else if (p_Key == keyVimNavigationFocusHistory)
+      else if ((p_Key == keyVimNavigationFocusHistory) || (p_Key == keyVimNavigationRight))
       {
         GetImpl().OnKeyNextFrame();
       }
