@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+	"C"
 
 	"github.com/google/uuid"
 	"github.com/mdp/qrterminal"
@@ -1485,6 +1486,141 @@ func (handler *SgEventHandler) handleReadSelf(evt *events.ReadSelf) bool {
 		}
 	}
 	return true
+}
+
+//export SgGetProfilePicture
+func SgGetProfilePicture(connId int, idStr *C.char) *C.char {
+	client := GetClient(connId)
+	if client == nil {
+		return nil
+	}
+
+	goId := C.GoString(idStr)
+	if userUUID := StringToUUID(goId); userUUID != uuid.Nil {
+		return getUserProfilePicture(client, userUUID, goId)
+	}
+
+	// Not a valid UUID -> treat as a group identifier
+	return getGroupPicture(client, goId)
+}
+
+func getUserProfilePicture(client *signalmeow.Client, userUUID uuid.UUID, goUserId string) *C.char {
+	ctx := context.TODO()
+
+	// 1. Fetch profile metadata for AvatarPath
+	profile, err := client.RetrieveProfileByID(ctx, userUUID, 0)
+	if err != nil || profile == nil || profile.AvatarPath == "" || profile.AvatarPath == "clear" {
+		hasKey := profile != nil && profile.Key != (libsignalgo.ProfileKey{})
+		avatarPath := ""
+		if profile != nil {
+			avatarPath = profile.AvatarPath
+		}
+		LOG_WARNING(fmt.Sprintf("No avatar for %s: err=%v avatarPath=%q profileKeyKnown=%v",
+			goUserId, err, avatarPath, hasKey))
+		return nil
+	}
+
+	// 2. Load profile key via type assertion on RecipientStore
+	type aciRecipientLoader interface {
+		LoadRecipientByACI(ctx context.Context, aci uuid.UUID) (*types.Recipient, error)
+	}
+
+	var profKey libsignalgo.ProfileKey
+	if loader, ok := client.Store.RecipientStore.(aciRecipientLoader); ok {
+		recipient, rErr := loader.LoadRecipientByACI(ctx, userUUID)
+		if rErr == nil && recipient != nil {
+			profKey = recipient.Profile.Key
+		}
+	}
+
+	// Fallback to profile.Key if LoadRecipientByACI returned an empty key
+	if profKey == (libsignalgo.ProfileKey{}) {
+		profKey = profile.Key
+	}
+
+	if profKey == (libsignalgo.ProfileKey{}) {
+		LOG_WARNING(fmt.Sprintf("No valid profile key available for %s", goUserId))
+		return nil
+	}
+
+	// 3. Prepare local cache path (~/.cache/nchat/avatars/<UUID>_<AvatarPath>.jpg)
+	cacheDir := filepath.Join(os.Getenv("HOME"), ".cache", "nchat", "avatars")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		LOG_WARNING(fmt.Sprintf("Failed to create avatar cache dir: %v", err))
+		return nil
+	}
+
+	sanitizedAvatar := strings.ReplaceAll(profile.AvatarPath, "/", "_")
+	fileName := fmt.Sprintf("%s_%s.jpg", userUUID.String(), sanitizedAvatar)
+	localPath := filepath.Join(cacheDir, fileName)
+
+	// 4. Check if cached file already exists
+	if _, err := os.Stat(localPath); err == nil {
+		LOG_TRACE(fmt.Sprintf("Avatar already cached at %s", localPath))
+		return C.CString(localPath)
+	}
+
+	// 5. Download and decrypt user avatar using the profile key
+	avatarBytes, err := client.DownloadUserAvatar(ctx, profile.AvatarPath, profKey)
+	if err != nil || len(avatarBytes) == 0 {
+		LOG_WARNING(fmt.Sprintf("Failed to download avatar bytes for %s: %v", goUserId, err))
+		return nil
+	}
+
+	// 6. Save image bytes to disk
+	if err := os.WriteFile(localPath, avatarBytes, 0644); err != nil {
+		LOG_WARNING(fmt.Sprintf("Failed to save avatar image to disk: %v", err))
+		return nil
+	}
+
+	LOG_INFO(fmt.Sprintf("Successfully saved profile picture to %s", localPath))
+	return C.CString(localPath)
+}
+
+func getGroupPicture(client *signalmeow.Client, goGroupId string) *C.char {
+	ctx := context.TODO()
+	gid := types.GroupIdentifier(goGroupId)
+
+	// 1. Fetch group metadata for AvatarPath and MasterKey
+	group, _, err := client.RetrieveGroupByID(ctx, gid, 0)
+	if err != nil || group == nil || group.AvatarPath == "" {
+		LOG_WARNING(fmt.Sprintf("No avatar for group %s: err=%v", goGroupId, err))
+		return nil
+	}
+
+	// 2. Prepare local cache path (~/.cache/nchat/avatars/<groupId>_<AvatarPath>.jpg)
+	cacheDir := filepath.Join(os.Getenv("HOME"), ".cache", "nchat", "avatars")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		LOG_WARNING(fmt.Sprintf("Failed to create avatar cache dir: %v", err))
+		return nil
+	}
+
+	sanitizedGroupId := strings.ReplaceAll(goGroupId, "/", "_")
+	sanitizedAvatar := strings.ReplaceAll(group.AvatarPath, "/", "_")
+	fileName := fmt.Sprintf("%s_%s.jpg", sanitizedGroupId, sanitizedAvatar)
+	localPath := filepath.Join(cacheDir, fileName)
+
+	// 3. Check if cached file already exists
+	if _, err := os.Stat(localPath); err == nil {
+		LOG_TRACE(fmt.Sprintf("Group avatar already cached at %s", localPath))
+		return C.CString(localPath)
+	}
+
+	// 4. Download group avatar using the group's real master key, not the identifier
+	avatarBytes, err := client.DownloadGroupAvatar(ctx, group.AvatarPath, group.GroupMasterKey)
+	if err != nil || len(avatarBytes) == 0 {
+		LOG_WARNING(fmt.Sprintf("Failed to download group avatar for %s: %v", goGroupId, err))
+		return nil
+	}
+
+	// 5. Save image bytes to disk
+	if err := os.WriteFile(localPath, avatarBytes, 0644); err != nil {
+		LOG_WARNING(fmt.Sprintf("Failed to save group avatar to disk: %v", err))
+		return nil
+	}
+
+	LOG_INFO(fmt.Sprintf("Successfully saved group picture to %s", localPath))
+	return C.CString(localPath)
 }
 
 func (handler *SgEventHandler) handleContactList(evt *events.ContactList) bool {

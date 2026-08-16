@@ -185,6 +185,19 @@ bool SgChat::LoadProfile(const std::string& p_ProfilesDir, const std::string& p_
   return true;
 }
 
+std::string SgChat::GetProfilePicturePath(const std::string& p_UserId)
+{
+  char* c_path = SgGetProfilePicture(static_cast<GoInt>(m_ConnId), const_cast<char*>(p_UserId.c_str()));
+  if (!c_path)
+  {
+    return "";
+  }
+
+  std::string path(c_path);
+  free(c_path);
+  return path;
+}
+
 bool SgChat::CloseProfile()
 {
   if ((m_SignalmeowDate != m_ProfileDirVersion) && m_WasOnline)
