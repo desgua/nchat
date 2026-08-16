@@ -1442,6 +1442,10 @@ func (handler *SgEventHandler) handleReaction(chatId string, senderId string, fr
 	if reaction.GetRemove() {
 		emoji = ""
 	}
+	if emoji != "" && !fromMe {
+		senderName := GetContactName(connId, senderId)
+		emoji = fmt.Sprintf("%s[%s]", emoji, senderName)
+	}
 	msgId := fmt.Sprintf("%d", reaction.GetTargetSentTimestamp())
 
 	CSgNewMessageReactionNotify(connId, chatId, msgId, senderId, emoji, BoolToInt(fromMe))
