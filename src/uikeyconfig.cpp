@@ -266,6 +266,7 @@ void UiKeyConfig::Init(bool p_MapKeys)
     { "vim_navigation_new_contact", "" },
     { "vim_navigation_select_contact", "" },
     { "vim_navigation_ext_call", "" },
+    { "vim_navigation_ext_edit", "" },
     { "next_unread_chat", "KEY_NONE" },
     { "prev_unread_chat", "KEY_NONE" },
     { "open_profile_photo", "KEY_NONE" },
