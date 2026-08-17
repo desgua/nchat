@@ -5129,16 +5129,6 @@ void UiModel::KeyHandler(wint_t p_Key)
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyEnd();
-    if (isHistoryFocused)
-    {
-      GetImpl().OnKeyNextFrame();
-      return;
-    }
-    else if (isListFocused)
-    {
-      GetImpl().OnKeyPrevFrame();
-      return;
-    }
   }
   else if (p_Key == keyQuit || (!isEntryFocused && p_Key == keyVimNavigationQuit))
   {
