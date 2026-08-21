@@ -24,7 +24,8 @@ var (
 	KeepAliveIntervalMax = 30 * time.Second
 
 	// KeepAliveMaxFailTime specifies the maximum time to wait before forcing a reconnect if keepalives fail repeatedly.
-	KeepAliveMaxFailTime = 3 * time.Minute
+	//KeepAliveMaxFailTime = 3 * time.Minute
+	KeepAliveMaxFailTime = 45 * time.Second
 )
 
 func (cli *Client) keepAliveLoop(ctx, connCtx context.Context) {
