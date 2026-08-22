@@ -5093,7 +5093,7 @@ void UiModel::KeyHandler(wint_t p_Key)
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyPrevUnreadChat();
   }
-  else if (p_Key == keyOpenProfilePhoto || (isListFocused && p_Key == keyVimNavigationProfilePhoto))
+  else if (p_Key == keyOpenProfilePhoto || (!isEntryFocused && p_Key == keyVimNavigationProfilePhoto))
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OpenProfilePhoto();

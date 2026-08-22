@@ -326,7 +326,7 @@ private:
       History,
       Entry,
     };
-    Focus m_Focus = Focus::List;
+    Focus m_Focus = Focus::History;
 
     int m_HelpOffset = 0;
   };
