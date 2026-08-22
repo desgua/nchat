@@ -5083,12 +5083,12 @@ void UiModel::KeyHandler(wint_t p_Key)
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyPrevChat();
   }
-  else if (p_Key == keyNextUnreadChat || (isListFocused && p_Key == keyVimNavigationNextUnread))
+  else if (p_Key == keyNextUnreadChat || (!isEntryFocused && p_Key == keyVimNavigationNextUnread))
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyNextUnreadChat();
   }
-  else if (p_Key == keyPrevUnreadChat || (isListFocused && p_Key == keyVimNavigationPrevUnread))
+  else if (p_Key == keyPrevUnreadChat || (!isEntryFocused && p_Key == keyVimNavigationPrevUnread))
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyPrevUnreadChat();
