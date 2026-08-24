@@ -1590,8 +1590,27 @@ func WmGetProfilePicture(connId int, userIdStr *C.char) *C.char {
 		return nil
 	}
 
+	// 1. Prepare local cache dir (~/.cache/nchat/avatars/<ID>_<picId>.jpg)
+	cacheDir := filepath.Join(os.Getenv("HOME"), ".cache", "nchat", "avatars")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		LOG_WARNING(fmt.Sprintf("Failed to create avatar cache dir: %v", err))
+		return nil
+	}
+
+	// 2. Check cache BEFORE touching the network at all.
+	// Filenames are "<user>_<picId>.jpg" (or "<user>.jpg" if picId was empty),
+	// so glob on the user prefix rather than needing picInfo.ID up front.
+	if matches, globErr := filepath.Glob(filepath.Join(cacheDir, jid.User+"_*.jpg")); globErr == nil && len(matches) > 0 {
+		LOG_TRACE(fmt.Sprintf("Avatar already cached at %s", matches[0]))
+		return C.CString(matches[0])
+	}
+	if fallbackPath := filepath.Join(cacheDir, jid.User+".jpg"); fileExists(fallbackPath) {
+		LOG_TRACE(fmt.Sprintf("Avatar already cached at %s", fallbackPath))
+		return C.CString(fallbackPath)
+	}
+
+	// 3. Not cached — fetch high-res picture info from WhatsApp servers
 	ctx := context.TODO()
-	// 1. Fetch high-res picture info from WhatsApp servers
 	picInfo, err := client.GetProfilePictureInfo(ctx, jid, &whatsmeow.GetProfilePictureParams{
 		Preview: false,
 	})
@@ -1600,25 +1619,11 @@ func WmGetProfilePicture(connId int, userIdStr *C.char) *C.char {
 		return nil
 	}
 
-	// 2. Prepare local cache path (~/.cache/nchat/avatars/<ID>_<DirectPath>.jpg)
-	// Using DirectPath or ID ensures we re-download if the user updates their picture
-	cacheDir := filepath.Join(os.Getenv("HOME"), ".cache", "nchat", "avatars")
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		LOG_WARNING(fmt.Sprintf("Failed to create avatar cache dir: %v", err))
-		return nil
-	}
-
 	fileName := fmt.Sprintf("%s.jpg", jid.User)
 	if picInfo.ID != "" {
 		fileName = fmt.Sprintf("%s_%s.jpg", jid.User, picInfo.ID)
 	}
 	localPath := filepath.Join(cacheDir, fileName)
-
-	// 3. Check if cached file already exists
-	if _, err := os.Stat(localPath); err == nil {
-		LOG_TRACE(fmt.Sprintf("Avatar already cached at %s", localPath))
-		return C.CString(localPath)
-	}
 
 	// 4. Download image bytes from picInfo.URL
 	resp, err := http.Get(picInfo.URL)
@@ -1645,6 +1650,11 @@ func WmGetProfilePicture(connId int, userIdStr *C.char) *C.char {
 
 	LOG_INFO(fmt.Sprintf("Successfully saved profile picture to %s", localPath))
 	return C.CString(localPath)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 //export WmCheckIsOnWhatsApp
