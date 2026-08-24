@@ -4282,7 +4282,7 @@ std::string UiModel::Impl::GetProfileDisplayName(const std::string& p_ProfileId)
 
 std::string UiModel::Impl::GetProfileSuffix(const std::string& p_ProfileId)
 {
-  return IsMultipleProfiles() ? " @ " + GetProfileDisplayName(p_ProfileId) : "";
+  return IsMultipleProfiles() ? " " + GetProfileDisplayName(p_ProfileId) : "";
 }
 
 void UiModel::Impl::OnKeyQuit()
