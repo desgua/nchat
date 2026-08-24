@@ -364,6 +364,7 @@ public:
   int64_t GetGroupMembersUpdateTime();
   void RequestGroupMembers(const std::string& p_ProfileId, const std::string& p_ChatId);
   std::vector<std::string> GetGroupMembers(const std::string& p_ProfileId, const std::string& p_ChatId);
+  bool GetChatInfoIsGroupLocked(const std::string& p_ProfileId, const std::string& p_ChatId);
   bool GetEmojiEnabled();
   int GetHelpOffset();
   void SetHelpOffset(int p_HelpOffset);

@@ -1785,6 +1785,11 @@ std::vector<std::string> UiModel::Impl::GetGroupMembers(const std::string& p_Pro
   return std::vector<std::string>();
 }
 
+bool UiModel::GetChatInfoIsGroupLocked(const std::string& p_ProfileId, const std::string& p_ChatId)
+{
+  return GetImpl().GetChatInfoIsGroup(p_ProfileId, p_ChatId);
+}
+
 bool UiModel::Impl::GetChatInfoIsGroup(const std::string& p_ProfileId, const std::string& p_ChatId)
 {
   auto it = m_Protocols.find(p_ProfileId);

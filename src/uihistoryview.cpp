@@ -73,6 +73,7 @@ void UiHistoryView::Draw()
   static std::wstring quoteIndicator = L"> ";
 
   std::pair<std::string, std::string>& currentChat = m_Model->GetCurrentChatLocked();
+  const bool isGroupChat = m_Model->GetChatInfoIsGroupLocked(currentChat.first, currentChat.second);
   const bool emojiEnabled = m_Model->GetEmojiEnabledLocked();
   static const bool developerMode = AppUtil::GetDeveloperMode();
 
@@ -428,23 +429,29 @@ void UiHistoryView::Draw()
     }();
 
     wattron(m_PaddedWin, attributeName | colorPairName);
-    std::string name = m_Model->GetContactNameLocked(currentChat.first, msg.senderId);
-    if (!emojiEnabled)
+    std::wstring wsender;
+    if (isGroupChat)
     {
-      name = StrUtil::Textize(name);
+      std::string name = m_Model->GetContactNameLocked(currentChat.first, msg.senderId);
+      if (!emojiEnabled)
+      {
+        name = StrUtil::Textize(name);
+      }
+
+      wsender = StrUtil::ToWString(name);
     }
 
-    std::wstring wsender = StrUtil::ToWString(name);
+    const std::wstring wtimeSep = wsender.empty() ? L"" : L" ";
     std::wstring wtime;
     if (developerMode)
     {
-      wtime = L" (" + StrUtil::ToWString(std::to_string(msg.timeSent)) + L")";
+      wtime = wtimeSep + L"(" + StrUtil::ToWString(std::to_string(msg.timeSent)) + L")";
     }
     else
     {
       if (msg.timeSent != std::numeric_limits<int64_t>::max())
       {
-        wtime = L" (" + StrUtil::ToWString(TimeUtil::GetTimeString(msg.timeSent, false /* p_IsExport */)) + L")";
+        wtime = wtimeSep + L"(" + StrUtil::ToWString(TimeUtil::GetTimeString(msg.timeSent, false /* p_IsExport */)) + L")";
       }
     }
 
