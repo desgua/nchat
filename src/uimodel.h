@@ -37,6 +37,7 @@ private:
     void OnKeyDecreaseListWidth();
     void OnKeyIncreaseListWidth();
     void OnKeyToggleHelp();
+    void OnKeyReconnect();
     void OnKeyToggleList();
     void OnKeyToggleTop();
     void OnKeyToggleEmoji();

@@ -132,6 +132,23 @@ void UiModel::Impl::OnKeyIncreaseListWidth()
   ReinitView();
 }
 
+void UiModel::Impl::OnKeyReconnect()
+{
+  AnyUserKeyInput();
+
+  for (auto& protocol : m_Protocols)
+  {
+    std::shared_ptr<Protocol> protocolPtr = protocol.second;
+    std::string profileId = protocol.first;
+    std::thread([protocolPtr, profileId]()
+    {
+      LOG_TRACE("force reconnect %s", profileId.c_str());
+      protocolPtr->Logout();
+      protocolPtr->Login();
+    }).detach();
+  }
+}
+
 void UiModel::Impl::OnKeyToggleHelp()
 {
   AnyUserKeyInput();
@@ -4971,6 +4988,8 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationTransfer = UiKeyConfig::GetKey("vim_navigation_transfer");
   static wint_t keyVimNavigationSendMsg = UiKeyConfig::GetKey("vim_navigation_send_msg");
 
+  static wint_t keyReconnect = UiKeyConfig::GetKey("reconnect");
+
   static wint_t keyPrevPage = UiKeyConfig::GetKey("prev_page");
   static wint_t keyNextPage = UiKeyConfig::GetKey("next_page");
   static wint_t keyEnd = UiKeyConfig::GetKey("end");
@@ -5075,6 +5094,11 @@ void UiModel::KeyHandler(wint_t p_Key)
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyToggleHelp();
+  }
+  else if (p_Key == keyReconnect)
+  {
+    std::unique_lock<owned_mutex> lock(m_ModelMutex);
+    GetImpl().OnKeyReconnect();
   }
   else if (p_Key == keyToggleList)
   {

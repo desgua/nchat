@@ -270,6 +270,7 @@ void UiKeyConfig::Init(bool p_MapKeys)
     { "vim_navigation_ext_edit", "" },
     { "vim_navigation_transfer", "" },
     { "vim_navigation_send_msg", "" },
+    { "reconnect", "" },
     { "next_unread_chat", "KEY_NONE" },
     { "prev_unread_chat", "KEY_NONE" },
     { "open_profile_photo", "KEY_NONE" },
