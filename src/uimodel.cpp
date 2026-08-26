@@ -285,11 +285,24 @@ bool UiModel::Impl::IsEntryFocused()
   return (m_Focus == Focus::Entry);
 }
 
+bool UiModel::IsListFocusedLocked()
+{
+  nc_assert(m_ModelMutex.owns_lock());
+  return GetImpl().IsListFocused();
+}
+
+bool UiModel::IsHistoryFocusedLocked()
+{
+  nc_assert(m_ModelMutex.owns_lock());
+  return GetImpl().IsHistoryFocused();
+}
+
 bool UiModel::IsEntryFocusedLocked()
 {
   nc_assert(m_ModelMutex.owns_lock());
   return GetImpl().IsEntryFocused();
 }
+
 
 void UiModel::Impl::EntryKeyHandler(wint_t p_Key)
 {
