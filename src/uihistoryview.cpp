@@ -445,13 +445,13 @@ void UiHistoryView::Draw()
     std::wstring wtime;
     if (developerMode)
     {
-      wtime = wtimeSep + L"(" + StrUtil::ToWString(std::to_string(msg.timeSent)) + L")";
+      wtime = wtimeSep + StrUtil::ToWString(std::to_string(msg.timeSent));
     }
     else
     {
       if (msg.timeSent != std::numeric_limits<int64_t>::max())
       {
-        wtime = wtimeSep + L"(" + StrUtil::ToWString(TimeUtil::GetTimeString(msg.timeSent, false /* p_IsExport */)) + L")";
+        wtime = wtimeSep + StrUtil::ToWString(TimeUtil::GetTimeString(msg.timeSent, false /* p_IsExport */));
       }
     }
 
