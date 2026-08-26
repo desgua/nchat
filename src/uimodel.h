@@ -392,6 +392,8 @@ public:
   void OnStatusUpdateLocked(uint32_t p_Status);
   std::string GetFocusedFrameNameLocked();
   bool IsEntryFocusedLocked();
+  bool IsListFocusedLocked();
+  bool IsHistoryFocusedLocked();
 
   // Static methods
   static bool IsAttachmentDownloaded(const FileInfo& p_FileInfo);

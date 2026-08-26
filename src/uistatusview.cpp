@@ -37,9 +37,30 @@ void UiStatusView::Draw()
   static int colorPair = UiColorConfig::GetColorPair("status_color");
   static int attribute = UiColorConfig::GetAttribute("status_attr");
 
+  static int colorPairList = UiColorConfig::GetColorPair("vim_navigation_status_color_list");
+  static int colorPairHistory = UiColorConfig::GetColorPair("vim_navigation_status_color_history");
+
+  bool isListFocused = m_Model->IsListFocusedLocked();
+  bool isHistoryFocused = m_Model->IsHistoryFocusedLocked();
+  bool isEntryFocused = m_Model->IsEntryFocusedLocked();
+
+  int focusColorPair = colorPair;
+  if (isListFocused)
+  {
+    focusColorPair = colorPairList;
+  }
+  else if (isHistoryFocused)
+  {
+    focusColorPair = colorPairHistory;
+  }
+  else if (isEntryFocused)
+  {
+    focusColorPair = colorPair;
+  }
+
   werase(m_Win);
-  wbkgd(m_Win, attribute | colorPair | ' ');
-  wattron(m_Win, attribute | colorPair);
+  wbkgd(m_Win, attribute | focusColorPair | ' ');
+  wattron(m_Win, attribute | focusColorPair);
 
   std::wstring wstatus;
   if (currentChat.first.empty() && currentChat.second.empty())
@@ -102,6 +123,6 @@ void UiStatusView::Draw()
 
   mvwaddnwstr(m_Win, 0, 0, wstatus.c_str(), wstatus.size());
 
-  wattroff(m_Win, attribute | colorPair);
+  wattroff(m_Win, attribute | focusColorPair);
   wrefresh(m_Win);
 }
