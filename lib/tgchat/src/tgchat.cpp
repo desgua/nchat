@@ -40,6 +40,7 @@
 #include "status.h"
 #include "strutil.h"
 #include "timeutil.h"
+#include "future"
 
 // TDLib's history view (consulted on startup) has the message erased, so the
 // modified copy becomes an orphan that's either invisible after restart or
@@ -115,6 +116,7 @@ public:
 
   void SendRequest(std::shared_ptr<RequestMessage> p_RequestMessage);
   void SetMessageHandler(const std::function<void(std::shared_ptr<ServiceMessage>)>& p_MessageHandler);
+  std::string GetProfilePicturePath(const std::string& p_UserId);
 
 private:
   std::string m_ProfileId;
@@ -3684,6 +3686,159 @@ void TgChat::Impl::DownloadFile(std::string p_ChatId, std::string p_MsgId, std::
   catch (...)
   {
   }
+}
+
+// Public wrapper
+std::string TgChat::GetProfilePicturePath(const std::string& p_UserId)
+{
+  return m_Impl->GetProfilePicturePath(p_UserId);
+}
+
+// Implementation
+std::string TgChat::Impl::GetProfilePicturePath(const std::string& p_UserId)
+{
+  int64_t chatId = StrUtil::NumFromHex<int64_t>(p_UserId);
+  if (chatId == 0) {
+    return "";
+  }
+
+  const char* home = getenv("HOME");
+  const std::string cacheDir = std::string(home ? home : "") + "/.cache/nchat/avatars";
+  FileUtil::MkDir(cacheDir);
+
+  // 1. Check cache synchronously
+  const std::string prefix = p_UserId + "_";
+  for (const auto& dirEntry : FileUtil::ListPaths(cacheDir))
+  {
+    if (dirEntry.IsDir()) continue;
+    if ((dirEntry.name.compare(0, prefix.size(), prefix) == 0) ||
+        (dirEntry.name == (p_UserId + ".jpg")))
+    {
+      return cacheDir + "/" + dirEntry.name;
+    }
+  }
+
+  // 2. Use shared_ptr promise/future to safely bridge async TDLib to synchronous caller
+  auto resultPromise = std::make_shared<std::promise<std::string>>();
+  std::future<std::string> resultFuture = resultPromise->get_future();
+
+  // 3. Determine if this is a group (negative ID) or user (positive ID)
+  if (chatId < 0)
+  {
+    // Group chat - use getChat
+    auto get_chat = td::td_api::make_object<td::td_api::getChat>();
+    get_chat->chat_id_ = chatId;
+
+    SendQuery(std::move(get_chat),
+      [this, p_UserId, cacheDir, resultPromise](Object object)
+      {
+        if (object->get_id() == td::td_api::error::ID)
+        {
+          resultPromise->set_value("");
+          return;
+        }
+
+        auto tchat = td::move_tl_object_as<td::td_api::chat>(object);
+        if (!tchat || !tchat->photo_ || !tchat->photo_->big_)
+        {
+          resultPromise->set_value("");
+          return;
+        }
+
+        const int32_t fileId = tchat->photo_->big_->id_;
+        const std::string fileName = p_UserId + "_" + std::to_string(fileId) + ".jpg";
+        const std::string localPath = cacheDir + "/" + fileName;
+
+        auto download_file = td::td_api::make_object<td::td_api::downloadFile>();
+        download_file->file_id_ = fileId;
+        download_file->priority_ = 32;
+        download_file->synchronous_ = true;
+
+        SendQuery(std::move(download_file),
+          [this, p_UserId, localPath, resultPromise](Object dlObject)
+          {
+            if (dlObject->get_id() == td::td_api::error::ID)
+            {
+              resultPromise->set_value("");
+              return;
+            }
+
+            auto file_ = td::move_tl_object_as<td::td_api::file>(dlObject);
+            if (file_ && file_->local_ && !file_->local_->path_.empty())
+            {
+              FileUtil::CopyFile(file_->local_->path_, localPath);
+              resultPromise->set_value(localPath);
+            }
+            else
+            {
+              resultPromise->set_value("");
+            }
+          });
+      });
+  }
+  else
+  {
+    // User - use getUser (original implementation)
+    auto get_user = td::td_api::make_object<td::td_api::getUser>();
+    get_user->user_id_ = chatId;
+
+    SendQuery(std::move(get_user),
+      [this, p_UserId, cacheDir, resultPromise](Object object)
+      {
+        if (object->get_id() == td::td_api::error::ID)
+        {
+          resultPromise->set_value("");
+          return;
+        }
+
+        auto tuser = td::move_tl_object_as<td::td_api::user>(object);
+        if (!tuser || !tuser->profile_photo_ || !tuser->profile_photo_->big_)
+        {
+          resultPromise->set_value("");
+          return;
+        }
+
+        const int64_t photoId = tuser->profile_photo_->id_;
+        const int32_t fileId = tuser->profile_photo_->big_->id_;
+        const std::string fileName = p_UserId + "_" + StrUtil::NumToHex(photoId) + ".jpg";
+        const std::string localPath = cacheDir + "/" + fileName;
+
+        auto download_file = td::td_api::make_object<td::td_api::downloadFile>();
+        download_file->file_id_ = fileId;
+        download_file->priority_ = 32;
+        download_file->synchronous_ = true;
+
+        SendQuery(std::move(download_file),
+          [this, p_UserId, localPath, resultPromise](Object dlObject)
+          {
+            if (dlObject->get_id() == td::td_api::error::ID)
+            {
+              resultPromise->set_value("");
+              return;
+            }
+
+            auto file_ = td::move_tl_object_as<td::td_api::file>(dlObject);
+            if (file_ && file_->local_ && !file_->local_->path_.empty())
+            {
+              FileUtil::CopyFile(file_->local_->path_, localPath);
+              resultPromise->set_value(localPath);
+            }
+            else
+            {
+              resultPromise->set_value("");
+            }
+          });
+      });
+  }
+
+  // 4. Wait for the result (with a 10-second timeout to prevent UI hangs)
+  if (resultFuture.wait_for(std::chrono::seconds(10)) == std::future_status::ready)
+  {
+    return resultFuture.get();
+  }
+
+  LOG_WARNING("Timeout waiting for profile picture for %s", p_UserId.c_str());
+  return "";
 }
 
 void TgChat::Impl::RequestSponsoredMessagesIfNeeded()

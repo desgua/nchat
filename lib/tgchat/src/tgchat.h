@@ -45,6 +45,7 @@ public:
 
   void SendRequest(std::shared_ptr<RequestMessage> p_RequestMessage);
   void SetMessageHandler(const std::function<void(std::shared_ptr<ServiceMessage>)>& p_MessageHandler);
+  std::string GetProfilePicturePath(const std::string& p_UserId) override;
 };
 
 extern "C" TgChat* CreateTgChat();
