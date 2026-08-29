@@ -53,7 +53,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var whatsmeowDate int = 20260814
+var whatsmeowDate int = 20260821
 
 type JSONMessage []json.RawMessage
 type JSONMessageType string
@@ -1090,11 +1090,14 @@ func (handler *WmEventHandler) HandleGroupInfo(groupInfo *events.GroupInfo) {
 		return
 	}
 	chatId := GetChatId(client, &groupInfo.JID, nil)
-	userId := GetUserId(client, &groupInfo.JID, groupInfo.Sender)
 
+	// sender is optional (parsed from an optional "participant" attribute), and is
+	// legitimately nil for group changes not attributed to a participant
 	senderJidStr := ""
-	if userId != chatId {
-		senderJidStr = userId
+	if groupInfo.Sender != nil {
+		if userId := GetUserId(client, &groupInfo.JID, groupInfo.Sender); userId != chatId {
+			senderJidStr = userId
+		}
 	}
 
 	// text
