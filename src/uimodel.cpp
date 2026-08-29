@@ -1383,9 +1383,9 @@ void UiModel::Impl::OpenProfilePhoto()
     std::string photoPath = protocol->GetProfilePicturePath(userId);
     if (photoPath.empty())
     {
-      std::string command = "notify no photo available &";
+      //std::string command = "notify no photo available &";
+      std::string command = "nchat_display no_photo_available >/dev/null 2>&1 &";
       std::system(command.c_str());
-
       return;
     }
     OpenProfilePhotoPath(photoPath);
