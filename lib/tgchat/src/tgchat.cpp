@@ -4221,26 +4221,41 @@ void TgChat::Impl::GetMsgReactions(td::td_api::object_ptr<td::td_api::messageInt
       auto reactionTypeEmoji = td::move_tl_object_as<td::td_api::reactionTypeEmoji>(messageReaction->type_);
       if (reactionTypeEmoji)
       {
-        p_Reactions.emojiCounts[reactionTypeEmoji->emoji_] = messageReaction->total_count_;
+        std::string emoji = reactionTypeEmoji->emoji_;
+
+        bool foundSelf = false;
+        std::vector<std::string> senderNames;
+        for (auto sit = messageReaction->recent_sender_ids_.begin();
+             sit != messageReaction->recent_sender_ids_.end(); ++sit)
+        {
+          const int64_t recentSenderId = GetSenderId(td::move_tl_object_as<td::td_api::MessageSender>(*sit));
+          if (IsSelf(recentSenderId))
+          {
+            foundSelf = true;
+          }
+          else
+          {
+            senderNames.push_back(GetContactName(recentSenderId));
+          }
+        }
+
+        if (!senderNames.empty())
+        {
+          std::string namesStr;
+          for (size_t i = 0; i < senderNames.size(); ++i)
+          {
+            namesStr += (i == 0 ? "" : ", ") + senderNames[i];
+          }
+          emoji += "[" + namesStr + "]";
+        }
+
+        p_Reactions.emojiCounts[emoji] = messageReaction->total_count_;
 
         const int64_t usedSenderId =
           GetSenderId(td::move_tl_object_as<td::td_api::MessageSender>(messageReaction->used_sender_id_));
-        if (IsSelf(usedSenderId))
+        if (IsSelf(usedSenderId) || foundSelf)
         {
           p_Reactions.senderEmojis[s_ReactionsSelfId] = reactionTypeEmoji->emoji_;
-        }
-        else
-        {
-          for (auto sit = messageReaction->recent_sender_ids_.begin();
-               sit != messageReaction->recent_sender_ids_.end(); ++sit)
-          {
-            const int64_t senderId = GetSenderId(td::move_tl_object_as<td::td_api::MessageSender>(*sit));
-            if (IsSelf(senderId))
-            {
-              p_Reactions.senderEmojis[s_ReactionsSelfId] = reactionTypeEmoji->emoji_;
-              break;
-            }
-          }
         }
       }
     }
