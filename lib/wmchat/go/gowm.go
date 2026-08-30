@@ -1579,7 +1579,6 @@ func GetContacts(connId int) {
 	CWmClearStatus(connId, FlagFetching)
 }
 
-<<<<<<< HEAD
 //export WmGetProfilePicture
 func WmGetProfilePicture(connId int, userIdStr *C.char) *C.char {
 	client := GetClient(connId)
@@ -1744,7 +1743,8 @@ func cachePollOptions(connId int, pollMsgID string, options []string) {
 	if err := SaveMap(GetPollOptionsStorePath(path), snapshot); err != nil {
 		LOG_TRACE(fmt.Sprintf("failed to save poll options: %v", err))
 	}
-=======
+}
+
 // ContactCard holds the contact details displayed for a shared contact.
 type ContactCard struct {
 	Name   string
@@ -1822,7 +1822,6 @@ func GetContactCards(contacts []*waE2E.ContactMessage) []ContactCard {
 	}
 
 	return cards
->>>>>>> origin/HEAD
 }
 
 func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
@@ -1856,94 +1855,6 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 
 	case msg.PinInChatMessage != nil:
 		handler.HandlePinInChatMessage(messageInfo, msg)
-
-<<<<<<< HEAD
-	case msg.ContactMessage != nil:
-		displayName := msg.ContactMessage.GetDisplayName()
-		vcard := msg.ContactMessage.GetVcard()
-
-		reTel := regexp.MustCompile(`(?i)TEL[^:]*:(.+)`)
-		telMatches := reTel.FindAllStringSubmatch(vcard, -1)
-
-		var phones []string
-		for _, match := range telMatches {
-			if len(match) > 1 {
-				// Clean up any carriage returns or spaces
-				phones = append(phones, strings.TrimSpace(match[1]))
-			}
-		}
-
-		reEmail := regexp.MustCompile(`(?i)EMAIL[^:]*:(.+)`)
-		emailMatches := reEmail.FindAllStringSubmatch(vcard, -1)
-
-		var emails []string
-		for _, match := range emailMatches {
-			if len(match) > 1 {
-				emails = append(emails, strings.TrimSpace(match[1]))
-			}
-		}
-
-		// Construct the text display layout for nchat
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("[Contact Card] %s", displayName))
-
-		if len(phones) > 0 {
-			sb.WriteString(fmt.Sprintf("\nPhone: %s", strings.Join(phones, ", ")))
-		}
-		if len(emails) > 0 {
-			sb.WriteString(fmt.Sprintf("\nEmail: %s", strings.Join(emails, ", ")))
-		}
-
-		contactText := sb.String()
-		msg.Conversation = &contactText
-		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
-
-	case msg.ContactsArrayMessage != nil:
-		var sb strings.Builder
-		sb.WriteString("[Multiple Contact Cards]")
-
-		// Loop through every contact in the array
-		for _, contact := range msg.ContactsArrayMessage.Contacts {
-			displayName := contact.GetDisplayName()
-			vcard := contact.GetVcard()
-
-			if displayName == "" && vcard == "" {
-				continue
-			}
-
-			// Parse phone numbers from this specific contact's vcard
-			reTel := regexp.MustCompile(`(?i)TEL[^:]*:(.+)`)
-			telMatches := reTel.FindAllStringSubmatch(vcard, -1)
-			var phones []string
-			for _, match := range telMatches {
-				if len(match) > 1 {
-					phones = append(phones, strings.TrimSpace(match[1]))
-				}
-			}
-
-			// Parse emails from this specific contact's vcard
-			reEmail := regexp.MustCompile(`(?i)EMAIL[^:]*:(.+)`)
-			emailMatches := reEmail.FindAllStringSubmatch(vcard, -1)
-			var emails []string
-			for _, match := range emailMatches {
-				if len(match) > 1 {
-					emails = append(emails, strings.TrimSpace(match[1]))
-				}
-			}
-
-			// Format this individual contact entry
-			sb.WriteString(fmt.Sprintf("\n\n%s", displayName))
-			if len(phones) > 0 {
-				sb.WriteString(fmt.Sprintf("\nPhone: %s", strings.Join(phones, ", ")))
-			}
-			if len(emails) > 0 {
-				sb.WriteString(fmt.Sprintf("\nEmail: %s", strings.Join(emails, ", ")))
-			}
-		}
-
-		contactText := sb.String()
-		msg.Conversation = &contactText
-		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
 
 	case msg.PollCreationMessage != nil || msg.PollCreationMessageV2 != nil || msg.PollCreationMessageV3 != nil:
 		var name string
@@ -2053,7 +1964,6 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 		msg.Conversation = &locText
 		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
 
-=======
 	case msg.ContactMessage != nil, msg.ContactsArrayMessage != nil:
 		contacts := msg.ContactsArrayMessage.GetContacts()
 		if msg.ContactMessage != nil {
@@ -2064,7 +1974,6 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 		msg.Conversation = &contactText
 		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
 
->>>>>>> origin/HEAD
 	default:
 		handler.HandleUnsupportedMessage(messageInfo, msg, isSyncRead)
 	}
