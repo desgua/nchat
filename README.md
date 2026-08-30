@@ -18,7 +18,7 @@ Added Features
 --------
 - Trigger a script `nchat_display` when a message with an image or attachment is selected
 - Vim style navigation
-- Moved information from status at bottom to the top status
+- Moved information from the bottom status to the top status
 - Search all chats (instead of restricting the search to the current chat)
 - Search in reverse order
 - Parse location and poll information [WhatsApp]
