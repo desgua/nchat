@@ -8,7 +8,22 @@ nchat
 nchat is a terminal-based multi-protocol messaging client for Linux and macOS
 with support for Telegram, WhatsApp and Signal.
 
-![screenshot nchat](/doc/screenshot-nchat.png)
+![screenshot nchat](/doc/screenshot-nchat_mod.png)
+
+Forked from [d99kris](https://github.com/d99kris/nchat)
+---------------------
+Consider this fork as experimental and prone to break, made by an amateur, event though it is what I used daily.
+
+Added Features
+--------
+- Trigger a script `nchat_display` when a message with an image or attachment is selected
+- Vim style navigation
+- Moved information from status at bottom to the top status
+- Search all chats (instead of restricting the search to the current chat)
+- Search in reverse order
+- Parse location and poll information [WhatsApp]
+- Keep text until it is sucessfully sent (avoiding to loose what was written if the connection is lost)
+- Message a contact that is not on the known list of contacts [WhatsApp]
 
 Features
 --------
