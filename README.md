@@ -12,7 +12,7 @@ with support for Telegram, WhatsApp and Signal.
 
 Forked from [d99kris](https://github.com/d99kris/nchat)
 ---------------------
-Consider this fork as experimental and prone to break, made by an amateur, event though it is what I used daily.
+Consider this fork as experimental and prone to break, made by an amateur, event though it is what I use daily.
 
 Added Features
 --------
@@ -24,6 +24,7 @@ Added Features
 - Parse location and poll information [WhatsApp]
 - Keep text until it is sucessfully sent (avoiding to loose what was written if the connection is lost)
 - Message a contact that is not on the known list of contacts [WhatsApp]
+- Remove the name of the contact before every message they send, unless it is in a group
 
 Features
 --------
