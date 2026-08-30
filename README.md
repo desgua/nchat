@@ -8,7 +8,7 @@ nchat
 nchat is a terminal-based multi-protocol messaging client for Linux and macOS
 with support for Telegram, WhatsApp and Signal.
 
-![screenshot nchat](/doc/screenshot-nchat_mod.png)
+![screenshot nchat](/doc/screenshot-nchat_mod.jpg)
 
 Forked from [d99kris](https://github.com/d99kris/nchat)
 ---------------------
