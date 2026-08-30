@@ -114,7 +114,7 @@ void UiStatusView::Draw()
   std::string focusName = m_Model->GetFocusedFrameNameLocked();
   if (!focusName.empty())
   {
-    std::wstring wfocus = StrUtil::ToWString(focusName);
+    std::wstring wfocus = L" " + StrUtil::ToWString(focusName);
     if ((int)wfocus.size() <= m_W)
     {
       wstatus = wfocus + StrUtil::TrimPadWString(wstatus, m_W - (int)wfocus.size());
