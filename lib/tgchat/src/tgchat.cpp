@@ -4246,7 +4246,7 @@ void TgChat::Impl::GetMsgReactions(td::td_api::object_ptr<td::td_api::messageInt
           {
             namesStr += (i == 0 ? "" : ", ") + senderNames[i];
           }
-          emoji += "[" + namesStr + "]";
+          emoji += " [" + namesStr + "]";
         }
 
         p_Reactions.emojiCounts[emoji] = messageReaction->total_count_;
