@@ -159,8 +159,8 @@ void UiTopView::Draw()
   const std::string statusStr = Status::ToString(status) + statusSuffixStr;
 
   std::wstring topWStrLeft = StrUtil::ToWString(unreadStr + appNameVersion);
-  std::wstring topWStrMid = StrUtil::ToWString(chatInfoStr);
-  std::wstring topWStrRight = StrUtil::ToWString(statusStr + std::string(topPadRight, ' '));
+  std::wstring topWStrMid = L"   " + StrUtil::ToWString(chatInfoStr);
+  std::wstring topWStrRight = L"   " + StrUtil::ToWString(statusStr + std::string(topPadRight, ' '));
 
   std::wstring leftPrefix;
   if (!focusName.empty())
