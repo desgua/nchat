@@ -243,19 +243,24 @@ void UiHistoryView::Draw()
         }
       }
 
-      if (hasDownloadedFile)
+      static const std::string imageOpenCommand = UiConfig::GetStr("image_open_command");
+      if (!imageOpenCommand.empty())
       {
-        std::thread([filePath]() {
-          std::string command = "nchat_display \"" + filePath + "\" >/dev/null 2>&1 &";
-          std::system(command.c_str());
-        }).detach();
-      }
-      else
-      {
-        // Plain text message or message without downloaded attachment
-        std::thread([]() {
-          std::system("nchat_display close >/dev/null 2>&1 &");
-        }).detach();
+        if (hasDownloadedFile)
+        {
+          std::thread([filePath]() {
+            std::string command = imageOpenCommand + " \"" + filePath + "\" >/dev/null 2>&1 &";
+            std::system(command.c_str());
+          }).detach();
+        }
+        else
+        {
+          // Plain text message or message without downloaded attachment
+          std::thread([]() {
+            std::string command = imageOpenCommand + " close >/dev/null 2>&1 &";
+            std::system(command.c_str());
+          }).detach();
+        }
       }
     }
     // Close display if selection mode is exited or no message is active
@@ -264,9 +269,14 @@ void UiHistoryView::Draw()
       if (!m_LastSelectedMsgId.empty())
       {
         m_LastSelectedMsgId.clear();
-        std::thread([]() {
-          std::system("nchat_display close >/dev/null 2>&1 &");
-        }).detach();
+        static const std::string imageOpenCommand = UiConfig::GetStr("image_open_command");
+        if (!imageOpenCommand.empty())
+        {
+          std::thread([]() {
+            std::string command = imageOpenCommand + " close >/dev/null 2>&1 &";
+            std::system(command.c_str());
+          }).detach();
+        }
       }
     }
     // end by desgua to display image

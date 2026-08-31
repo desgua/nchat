@@ -18,7 +18,11 @@ Consider this fork experimental and potentially buggy, made by an amateur, thoug
 
 Added Features
 --------
-- Trigger the `nchat_display` script when selecting a message containing an image or attachment
+- Custom image and preview trigger (`image_open_command`)
+    * Automatically invokes the script or command configured in nchat configuration file (usually `~/.config/nchat/ui.conf`):
+        *Attachment selected*: passes the attachment file path to the script.
+        *Text selected* passes `close` as the argument to close active previews.
+    [Note: see `utils/nchat_display` for an example script (optimized for dwl)]
 - Vim-style navigation
 - Moved status information from the bottom bar to the top bar
 - Search across all chats (instead of restricting search to the current chat)
@@ -27,7 +31,7 @@ Added Features
 - Retain draft text until successfully sent (prevents losing input if connection drops)
 - Message contacts not in the contact list [WhatsApp]
 - Omit contact names before individual messages unless in a group chat
-- Fetch profile photos
+- Fetch profile photo, and open it with the script defined at `~/.config/nchat/ui.conf` as the `image_open_command`, or pass `no_photo_available` if the contact doesn't have a photo
 - Display unread message count
 - Display attachment file sizes
 - Display audio and video duration

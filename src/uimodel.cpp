@@ -1358,10 +1358,14 @@ void UiModel::Impl::OpenProfilePhotoPath(const std::string& p_Path)
 {
   if (p_Path.empty()) return;
 
-  std::thread([p_Path]() {
-    std::string command = "nchat_display \"" + p_Path + "\" >/dev/null 2>&1 &";
-    std::system(command.c_str());
-  }).detach();
+  static const std::string imageOpenCommand = UiConfig::GetStr("image_open_command");
+  if (!imageOpenCommand.empty())
+  {
+    std::thread([p_Path]() {
+      std::string command = imageOpenCommand + " \"" + p_Path + "\" >/dev/null 2>&1 &";
+      std::system(command.c_str());
+    }).detach();
+  }
 }
 
 void UiModel::Impl::OpenProfilePhoto()
@@ -1383,10 +1387,13 @@ void UiModel::Impl::OpenProfilePhoto()
     std::string photoPath = protocol->GetProfilePicturePath(userId);
     if (photoPath.empty())
     {
-      //std::string command = "notify no photo available &";
-      std::string command = "nchat_display no_photo_available >/dev/null 2>&1 &";
-      std::system(command.c_str());
-      return;
+      static const std::string imageOpenCommand = UiConfig::GetStr("image_open_command");
+      if (!imageOpenCommand.empty())
+      {
+        std::string command = imageOpenCommand + " no_photo_available >/dev/null 2>&1 &";
+        std::system(command.c_str());
+        return;
+      }
     }
     OpenProfilePhotoPath(photoPath);
   }).detach();
