@@ -14,23 +14,23 @@ with support for Telegram, WhatsApp and Signal.
 
 Forked from [d99kris](https://github.com/d99kris/nchat)
 ---------------------
-Consider this fork as experimental and prone to break, made by an amateur, event though it is what I use daily.
+Consider this fork experimental and potentially buggy, made by an amateur, though it is my daily driver.
 
 Added Features
 --------
-- Trigger a script `nchat_display` when a message with an image or attachment is selected
-- Vim style navigation
-- Moved information from the bottom status to the top status
-- Search all chats (instead of restricting the search to the current chat)
+- Trigger the `nchat_display` script when selecting a message containing an image or attachment
+- Vim-style navigation
+- Moved status information from the bottom bar to the top bar
+- Search across all chats (instead of restricting search to the current chat)
 - Search in reverse order
 - Parse location and poll information [WhatsApp]
-- Keep text until it is sucessfully sent (avoiding to loose what was written if the connection is lost)
-- Message a contact that is not on the known list of contacts [WhatsApp]
-- Remove the name of the contact before every message they send, unless it is in a group
-- Fetch profile photo
-- Show the number of unread messages
-- Show the size of attachments
-- Show the lenght of audio and video
+- Retain draft text until successfully sent (prevents losing input if connection drops)
+- Message contacts not in the contact list [WhatsApp]
+- Omit contact names before individual messages unless in a group chat
+- Fetch profile photos
+- Display unread message count
+- Display attachment file sizes
+- Display audio and video duration
 
 Features
 --------
