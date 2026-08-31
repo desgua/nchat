@@ -35,6 +35,7 @@ Added Features
 - Display unread message count
 - Display attachment file sizes
 - Display audio and video duration
+- Add a shortcut to trigger reconnection when the connection is lost
 
 Features
 --------
