@@ -1,0 +1,142 @@
+#!/usr/bin/dash
+
+pidfile="/tmp/nchat_display.pid"
+
+# Check if PID file exists and a process is running with the stored PID
+if [ -f "$pidfile" ]; then
+	pid="$(cat "$pidfile")"
+	if $(kill -0 "$pid" >/dev/null 2>&1) ; then
+		#echo "Another instance of nchat_display is already running. Exiting..."
+		exit 0
+	fi
+fi
+
+if [ "$1" = 'close' ]; then
+	#echo "Closing..."
+	# Close any the previously opened picture
+	prev_pid="$(ps -ef | grep 'img_whats_view' | grep -v 'grep' | awk '{ print $2 }')"
+
+	if [ "$prev_pid" ]; then 
+		for pid in $prev_pid ; do
+			kill -15 "$pid"
+		done
+	fi
+	exit 0
+elif [ "$1" = 'no_photo_available' ]; then
+	file="$HOME/Backup/Pictures/no_image.png"
+else
+	file="$1"
+fi
+
+if [ ! -f "$file" ]; then
+	# Silently exit if we don't find the file
+	exit 0
+fi
+
+SEARCH_PPM () {
+	name="$cache/${file_name}-1.ppm"
+	if [ ! -f "$name" ]; then
+		name="$cache/${file_name}-01.ppm"
+	fi
+	if [ ! -f "$name" ]; then
+		name="$cache/${file_name}-001.ppm"
+	fi
+	if [ ! -f "$name" ]; then
+		name="$cache/${file_name}-0001.ppm"
+	fi
+}
+
+cache="/tmp/nchat_display_cache"
+file_extension="$(printf '%s' "$file" | grep -oE "\.[a-zA-Z0-9]{3,4}$")"
+
+# PDF
+if [ "$file_extension" = '.pdf' ]; then 
+	file_name="$(printf '%s' "$file" | awk -F '/' '{ print $NF }')"
+
+	SEARCH_PPM;
+	if [ ! -f "$name" ]; then
+		pdftoppm -f 1 -l 1 -r 150 "$file" "$cache/$file_name" >/dev/null 2>&1
+		if [ "$?" != '0' ]; then
+			notify 'Problem to convert the pdf'
+		fi
+		sleep .1
+	fi
+	SEARCH_PPM;
+
+# HTML
+elif [ "$file_extension" = '.html' ] || [ "$file_extension" = '.htm' ]; then 
+	file_name="$(printf '%s' "$file" | awk -F '/' '{ print $NF }')"
+	name="$cache/$(printf '%s' "$file_name" | sed 's/\.html$/\.jpg/ ; s/\.htm$/\.jpg/')"
+
+	if [ ! -f "$name" ]; then
+		helium --headless --screenshot="$name" --window-size=600,600 "$file"
+		if [ "$?" != '0' ]; then
+			notify 'Problem to convert the html'
+		fi
+	fi
+
+# video
+elif [ "$(printf '%s' "$file_extension" | grep -E 'f4v|mpeg|mp4|webv')" ]; then
+	file_name="$(printf '%s' "$file" | awk -F '/' '{ print $NF }')"
+	name="$cache/$(printf '%s' "$file_name" | sed 's/\.....$/\.jpg/ ; s/\....$/\.jpg/')"
+
+	if [ ! -f "$name" ]; then
+		ffmpeg -i "$file" -vframes 1 -q:v 1 "$name" >/dev/null 2>&1
+		sleep .1
+	fi
+
+
+# img
+elif [ "$(printf '%s' "$file_extension" | grep -E 'jpg|jpeg|png|webp')" ]; then 
+	name="$file"
+
+# audio
+elif [ "$(printf '%s' "$file_extension" | grep -E 'oga')" ]; then 
+	# Close open images
+	prev_pid="$(ps -ef | grep 'img_whats_view' | grep -v 'grep' | awk '{ print $2 }')"
+	if [ "$prev_pid" ]; then 
+		for pid in $prev_pid ; do
+			kill -15 "$pid"
+		done
+	fi
+
+	# And silently exit
+	exit 0
+elif [ "$file_extension" = '.zip' ]; then 
+	nchat_display 'close'
+	exit 0
+else
+	notify "Extension not handled: $file_extension"
+	exit 0
+fi
+
+# Open the image
+swayimg --execute='swayimg.on_initialized(function() swayimg.title = "chat" end)' --appid=img_whats_view --size=600x600 "$name" >/dev/null 2>&1 &
+swayimgpid="$!"
+
+#swayimg --execute='swayimg.on_initialized(function() swayimg.set_title("WhatsApp"); swayimg.viewer.on_key("Alt+j", function() end); swayimg.viewer.on_key("Alt+k", function() end) end)' --appid=img_whats_view --size=600x600 "$name" >/dev/null 2>&1 &
+
+# Get back to nchat
+filesize="$(stat -c%s "$file")"
+if [ "$filesize" -lt "100000" ]; then
+	sleep .1
+elif [ "$filesize" -lt "300000" ]; then
+	sleep .2
+else
+	sleep .3
+fi
+
+wlrctl keyboard type k modifiers super
+
+# Close other instances
+prev_pid="$(ps -ef | grep 'img_whats_view' | grep -v 'grep' | grep -v "$swayimgpid" | awk '{ print $2 }')"
+
+if [ "$prev_pid" ]; then 
+	for pid in $prev_pid ; do
+		kill -15 "$pid"
+	done
+fi
+
+[ -f "$pidfile" ] && rm "$pidfile"
+exit 0
+
