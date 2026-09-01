@@ -153,12 +153,10 @@ void UiTopView::Draw()
     return std::string("");
   }();
 
-  static const bool topShowVersion = UiConfig::GetBool("top_show_version");
-  static const std::string appNameVersion = AppUtil::GetAppName(topShowVersion);
   const std::string unreadStr = (unreadCount > 0) ? ("[" + std::to_string(unreadCount) + "] ") : "";
   const std::string statusStr = Status::ToString(status) + statusSuffixStr;
 
-  std::wstring topWStrLeft = StrUtil::ToWString(unreadStr + appNameVersion);
+  std::wstring topWStrLeft = StrUtil::ToWString(unreadStr);
   std::wstring topWStrMid = L"   " + StrUtil::ToWString(chatInfoStr);
   std::wstring topWStrRight = L"   " + StrUtil::ToWString(statusStr + std::string(topPadRight, ' '));
 
