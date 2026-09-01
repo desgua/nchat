@@ -20,6 +20,20 @@ UiTopView::UiTopView(const UiViewParams& p_Params)
 {
 }
 
+static std::string StatusToHumanStr(const std::string& p_StatusStr)
+{
+  static const std::map<std::string, std::string> statusStrMap =
+  {
+    { "Connecting", "󰲷" },
+    { "Online", "󰱔" },
+    { "Fetching", "" },
+    { "Offline", "󰱟" },
+  };
+
+  auto it = statusStrMap.find(p_StatusStr);
+  return (it != statusStrMap.end()) ? it->second : p_StatusStr;
+}
+
 void UiTopView::Draw()
 {
   static const bool awayStatusIndication = UiConfig::GetBool("away_status_indication");
@@ -154,7 +168,7 @@ void UiTopView::Draw()
   }();
 
   const std::string unreadStr = (unreadCount > 0) ? ("[" + std::to_string(unreadCount) + "] ") : "";
-  const std::string statusStr = Status::ToString(status) + statusSuffixStr;
+  const std::string statusStr = StatusToHumanStr(Status::ToString(status)) + statusSuffixStr;
 
   std::wstring topWStrLeft = StrUtil::ToWString(unreadStr);
   std::wstring topWStrMid = L"   " + StrUtil::ToWString(chatInfoStr);
