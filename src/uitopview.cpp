@@ -24,10 +24,11 @@ static std::string StatusToHumanStr(const std::string& p_StatusStr)
 {
   static const std::map<std::string, std::string> statusStrMap =
   {
-    { "Connecting", "󰲷" },
+    { "Connecting", "󱒓" },
     { "Online", "󰱔" },
-    { "Fetching", "" },
-    { "Offline", "󰱟" },
+    { "Fetching", "󰇚" },
+    { "Offline", "" },
+    { "Sending", "󰕒" },
   };
 
   auto it = statusStrMap.find(p_StatusStr);
