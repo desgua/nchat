@@ -26,6 +26,7 @@ void UiConfig::Init()
     { "auto_select_chat_timeout_sec", "1" },
     { "away_status_indication", "0" },
     { "call_command", "" },
+    { "call_command_extra", "" },
     { "chat_picker_sorted_alphabetically", "0" },
     { "confirm_archiving", "1" },
     { "confirm_deletion", "1" },

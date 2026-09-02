@@ -192,6 +192,8 @@ private:
     void OnKeyExtCall();
     std::string PreExtCall();
     void StartExtCall(const std::string& p_Phone);
+    void OnKeyExtCallExtra();
+    void StartExtCallExtra(const std::string& p_Phone);
 
     void GotoChat(const std::pair<std::string, std::string>& p_Chat);
     bool PreReact(std::string& p_ProfileId, std::string& p_ChatId, std::string& p_SenderId,
@@ -454,6 +456,7 @@ private:
   void OnKeyEditMsg();
   void OnKeyQuit();
   void OnKeyExtCall();
+  void OnKeyExtCallExtra();
   void OnKeyAutoCompose();
   void OnKeySelectMention();
   void OnKeyCut();

@@ -267,6 +267,7 @@ void UiKeyConfig::Init(bool p_MapKeys)
     { "vim_navigation_new_contact", "" },
     { "vim_navigation_select_contact", "" },
     { "vim_navigation_ext_call", "" },
+    { "vim_navigation_ext_call_extra", "" },
     { "vim_navigation_ext_edit", "" },
     { "vim_navigation_transfer", "" },
     { "vim_navigation_send_msg", "" },

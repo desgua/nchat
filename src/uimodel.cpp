@@ -4245,6 +4245,30 @@ void UiModel::Impl::StartExtCall(const std::string& p_Phone)
   RunProgram(cmd);
 }
 
+void UiModel::Impl::StartExtCallExtra(const std::string& p_Phone)
+{
+  static const std::string cmdTemplate = []()
+  {
+    std::string callCommand = UiConfig::GetStr("call_command_extra");
+    if (callCommand.empty())
+    {
+#if defined(__APPLE__)
+      callCommand = "open 'tel://%1' &";
+#else
+      callCommand = "xdg-open >/dev/null 2>&1 'tel://%1' &";
+#endif
+    }
+
+    return callCommand;
+  }();
+
+  std::string cmd = cmdTemplate;
+  StrUtil::ReplaceString(cmd, "%1", StrUtil::EscapeSingleQuote(p_Phone));
+
+  RunProgram(cmd);
+}
+
+
 void UiModel::Impl::SendProtocolRequest(const std::string& p_ProfileId, std::shared_ptr<RequestMessage> p_Request)
 {
   if (!m_Protocols.count(p_ProfileId))
@@ -4991,6 +5015,7 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationFindNext = UiKeyConfig::GetKey("vim_navigation_find_next");
   static wint_t keyVimNavigationFindPrev = UiKeyConfig::GetKey("vim_navigation_find_prev");
   static wint_t keyVimNavigationExtCall = UiKeyConfig::GetKey("vim_navigation_ext_call");
+  static wint_t keyVimNavigationExtCallExtra = UiKeyConfig::GetKey("vim_navigation_ext_call_extra");
   static wint_t keyVimNavigationExtEdit = UiKeyConfig::GetKey("vim_navigation_ext_edit");
   static wint_t keyVimNavigationTransfer = UiKeyConfig::GetKey("vim_navigation_transfer");
   static wint_t keyVimNavigationSendMsg = UiKeyConfig::GetKey("vim_navigation_send_msg");
@@ -5303,6 +5328,10 @@ void UiModel::KeyHandler(wint_t p_Key)
   else if (p_Key == keyExtCall || (!isEntryFocused && p_Key == keyVimNavigationExtCall))
   {
     OnKeyExtCall();
+  }
+  else if (!isEntryFocused && p_Key == keyVimNavigationExtCallExtra)
+  {
+    OnKeyExtCallExtra();
   }
   else if (p_Key == keyJumpQuoted || (isHistoryFocused && p_Key == keyVimNavigationJumpQuoted))
   {
@@ -6281,6 +6310,24 @@ void UiModel::OnKeyExtCall()
 
   std::unique_lock<owned_mutex> lock(m_ModelMutex);
   GetImpl().StartExtCall(phone);
+}
+
+void UiModel::OnKeyExtCallExtra()
+{
+  std::string phone;
+  {
+    std::unique_lock<owned_mutex> lock(m_ModelMutex);
+    phone = GetImpl().PreExtCall();
+  }
+
+  if (phone.empty())
+  {
+    MessageDialog("Warning", "Contact phone number unknown.", 0.7, 5);
+    return;
+  }
+
+  std::unique_lock<owned_mutex> lock(m_ModelMutex);
+  GetImpl().StartExtCallExtra(phone);
 }
 
 void UiModel::OnKeyAutoCompose()
