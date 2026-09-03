@@ -1,7 +1,7 @@
 #!/usr/bin/dash
 
+cache="/tmp/nchat_display_cache"
 pidfile="/tmp/nchat_display.pid"
-
 # Check if PID file exists and a process is running with the stored PID
 if [ -f "$pidfile" ]; then
 	pid="$(cat "$pidfile")"
@@ -11,26 +11,77 @@ if [ -f "$pidfile" ]; then
 	fi
 fi
 
-if [ "$1" = 'close' ]; then
-	#echo "Closing..."
-	# Close any the previously opened picture
+CLOSE () {
 	prev_pid="$(ps -ef | grep 'img_whats_view' | grep -v 'grep' | awk '{ print $2 }')"
-
 	if [ "$prev_pid" ]; then 
 		for pid in $prev_pid ; do
 			kill -15 "$pid"
 		done
 	fi
 	exit 0
-elif [ "$1" = 'no_photo_available' ]; then
-	file="$HOME/Backup/Pictures/no_image.png"
-else
-	file="$1"
+}
+
+pipe="$(cat)"
+
+case "$pipe" in
+	'close')
+			CLOSE;
+		;;
+
+	'no_photo_available')
+		file="$HOME/Backup/Pictures/no_image.png"
+		;;
+
+	file:*)
+		file="$(printf '%s' "$pipe" | sed 's/^file://')"
+		;;
+
+	text:*)
+		text="$(printf '%s' "$pipe" | sed 's/^text://')"
+		;;
+	*)
+		notify 'pipe not formated'
+		exit 1
+esac
+
+if [ "$text" ]; then
+	url="$(printf '%s' "$text" | grep -iE 'www|http' | head -n 1 | sed 's/.*\(www\)/\1/ ; s/.*\(http\)/\1/ ; s/ .*//')"
+
+	case "$url" in
+
+		'')
+			CLOSE;
+			;;
+
+		*prescricao.cfm*)
+			file="$cache/$(printf '%s' "$url" | sed 's|/|_|g ; s/$/.pdf/')"
+			if [ ! -f "$file" ]; then
+				wget -q "$url" -O "$file"
+			fi
+			;;
+
+		*youtube*)
+			file="$cache/$(printf '%s' "$url" | sed 's|/|_|g ; s/$/.jpg/')"
+			if [ ! -f "$file" ]; then
+				identifier="$(printf '%s' "$url" | sed 's|.*/|| ; s/?.*//')"
+				wget -q "https://img.youtube.com/vi/$identifier/maxresdefault.jpg" -O "$file"
+			fi
+			;;
+
+		*)
+			file="$cache/$(printf '%s' "$url" | cut -c -200 | sed 's|/|_|g ; s/$/.jpg/')"
+			if [ ! -f "$file" ]; then
+				notify 'fetching url'
+				helium --headless=new --user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36" --window-size=600,600 --screenshot="$file" "$url" </dev/null
+			fi
+			;;
+
+	esac
 fi
 
 if [ ! -f "$file" ]; then
-	# Silently exit if we don't find the file
-	exit 0
+	notify "Problem to get the file =$url="
+	exit 1
 fi
 
 SEARCH_PPM () {
@@ -46,7 +97,6 @@ SEARCH_PPM () {
 	fi
 }
 
-cache="/tmp/nchat_display_cache"
 file_extension="$(printf '%s' "$file" | grep -oE "\.[a-zA-Z0-9]{3,4}$")"
 
 # PDF
@@ -92,19 +142,13 @@ elif [ "$(printf '%s' "$file_extension" | grep -E 'jpg|jpeg|png|webp')" ]; then
 
 # audio
 elif [ "$(printf '%s' "$file_extension" | grep -E 'oga')" ]; then 
-	# Close open images
-	prev_pid="$(ps -ef | grep 'img_whats_view' | grep -v 'grep' | awk '{ print $2 }')"
-	if [ "$prev_pid" ]; then 
-		for pid in $prev_pid ; do
-			kill -15 "$pid"
-		done
-	fi
+	CLOSE;
 
-	# And silently exit
-	exit 0
+# zip
 elif [ "$file_extension" = '.zip' ]; then 
-	nchat_display 'close'
-	exit 0
+	CLOSE;
+
+# unknown
 else
 	notify "Extension not handled: $file_extension"
 	exit 0

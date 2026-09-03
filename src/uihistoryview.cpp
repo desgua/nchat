@@ -246,21 +246,16 @@ void UiHistoryView::Draw()
       static const std::string imageOpenCommand = UiConfig::GetStr("image_open_command");
       if (!imageOpenCommand.empty())
       {
-        if (hasDownloadedFile)
-        {
-          std::thread([filePath]() {
-            std::string command = imageOpenCommand + " \"" + filePath + "\" >/dev/null 2>&1 &";
-            std::system(command.c_str());
-          }).detach();
-        }
-        else
-        {
-          // Plain text message or message without downloaded attachment
-          std::thread([]() {
-            std::string command = imageOpenCommand + " close >/dev/null 2>&1 &";
-            std::system(command.c_str());
-          }).detach();
-        }
+        std::string payload = hasDownloadedFile ? ("file:" + filePath) : ("text:" + msg.text);
+        std::thread([payload]() {
+          std::string command = imageOpenCommand;
+          FILE* pipe = popen(command.c_str(), "w");
+          if (pipe != nullptr)
+          {
+            fwrite(payload.data(), 1, payload.size(), pipe);
+            pclose(pipe);
+          }
+        }).detach();
       }
     }
     // Close display if selection mode is exited or no message is active
@@ -272,9 +267,15 @@ void UiHistoryView::Draw()
         static const std::string imageOpenCommand = UiConfig::GetStr("image_open_command");
         if (!imageOpenCommand.empty())
         {
-          std::thread([]() {
-            std::string command = imageOpenCommand + " close >/dev/null 2>&1 &";
-            std::system(command.c_str());
+          std::string payload = "close";
+          std::thread([payload]() {
+            std::string command = imageOpenCommand;
+            FILE* pipe = popen(command.c_str(), "w");
+            if (pipe != nullptr)
+            {
+              fwrite(payload.data(), 1, payload.size(), pipe);
+              pclose(pipe);
+            }
           }).detach();
         }
       }

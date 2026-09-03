@@ -1361,9 +1361,15 @@ void UiModel::Impl::OpenProfilePhotoPath(const std::string& p_Path)
   static const std::string imageOpenCommand = UiConfig::GetStr("image_open_command");
   if (!imageOpenCommand.empty())
   {
-    std::thread([p_Path]() {
-      std::string command = imageOpenCommand + " \"" + p_Path + "\" >/dev/null 2>&1 &";
-      std::system(command.c_str());
+    std::string payload = ("file:" + p_Path);
+    std::thread([payload]() {
+      std::string command = imageOpenCommand;
+      FILE* pipe = popen(command.c_str(), "w");
+      if (pipe != nullptr)
+      {
+        fwrite(payload.data(), 1, payload.size(), pipe);
+        pclose(pipe);
+      }
     }).detach();
   }
 }
@@ -1390,10 +1396,18 @@ void UiModel::Impl::OpenProfilePhoto()
       static const std::string imageOpenCommand = UiConfig::GetStr("image_open_command");
       if (!imageOpenCommand.empty())
       {
-        std::string command = imageOpenCommand + " no_photo_available >/dev/null 2>&1 &";
-        std::system(command.c_str());
-        return;
+        std::string payload = "no_photo_available";
+        std::thread([payload]() {
+          std::string command = imageOpenCommand;
+          FILE* pipe = popen(command.c_str(), "w");
+          if (pipe != nullptr)
+          {
+            fwrite(payload.data(), 1, payload.size(), pipe);
+            pclose(pipe);
+          }
+        }).detach();
       }
+      return;
     }
     OpenProfilePhotoPath(photoPath);
   }).detach();
