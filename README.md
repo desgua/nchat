@@ -23,7 +23,7 @@ Added Features
         - *Attachment selected*: passes "file:" and the attachment file path to the script.
         - *Text selected*: passes "text:" and the text to the script.
         - *Unselecting message* (when no message is selected): pass "close" to the script.
-    [Note: see `utils/nchat_display` for an example script (optimized for dwl). The script must read from stdin]
+    [Note: see `utils/nchat_display` for an example script (optimized for dwl with skipfocus patch). The script must read from stdin]
 - Vim-style navigation
 - Moved status information from the bottom bar to the top bar
 - Search across all chats (instead of restricting search to the current chat)

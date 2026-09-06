@@ -71,7 +71,8 @@ if [ "$text" ]; then
 		*)
 			file="$cache/$(printf '%s' "$url" | cut -c -200 | sed 's|/|_|g ; s/$/.jpg/')"
 			if [ ! -f "$file" ]; then
-				notify 'fetching url'
+				swayimg --execute='swayimg.on_initialized(function() swayimg.title = "chat" end)' --appid=img_whats_view --size=600x600 "$HOME/Backup/Pictures/loading_icon.gif" >/dev/null 2>&1 &
+
 				helium --headless=new --user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36" --window-size=600,600 --screenshot="$file" "$url" </dev/null
 			fi
 			;;
@@ -126,7 +127,7 @@ elif [ "$file_extension" = '.html' ] || [ "$file_extension" = '.htm' ]; then
 	fi
 
 # video
-elif [ "$(printf '%s' "$file_extension" | grep -E 'f4v|mpeg|mp4|webv')" ]; then
+elif [ "$(printf '%s' "$file_extension" | grep -E 'f4v|mpeg|mp4|webv|mov')" ]; then
 	file_name="$(printf '%s' "$file" | awk -F '/' '{ print $NF }')"
 	name="$cache/$(printf '%s' "$file_name" | sed 's/\.....$/\.jpg/ ; s/\....$/\.jpg/')"
 
@@ -157,20 +158,6 @@ fi
 # Open the image
 swayimg --execute='swayimg.on_initialized(function() swayimg.title = "chat" end)' --appid=img_whats_view --size=600x600 "$name" >/dev/null 2>&1 &
 swayimgpid="$!"
-
-#swayimg --execute='swayimg.on_initialized(function() swayimg.set_title("WhatsApp"); swayimg.viewer.on_key("Alt+j", function() end); swayimg.viewer.on_key("Alt+k", function() end) end)' --appid=img_whats_view --size=600x600 "$name" >/dev/null 2>&1 &
-
-# Get back to nchat
-filesize="$(stat -c%s "$file")"
-if [ "$filesize" -lt "100000" ]; then
-	sleep .1
-elif [ "$filesize" -lt "300000" ]; then
-	sleep .2
-else
-	sleep .3
-fi
-
-wlrctl keyboard type k modifiers super
 
 # Close other instances
 prev_pid="$(ps -ef | grep 'img_whats_view' | grep -v 'grep' | grep -v "$swayimgpid" | awk '{ print $2 }')"
