@@ -241,6 +241,8 @@ void UiKeyConfig::Init(bool p_MapKeys)
     { "vim_navigation_right", "" },
     { "vim_navigation_next", "" },
     { "vim_navigation_prev", "" },
+    { "vim_navigation_next_page", "" },
+    { "vim_navigation_prev_page", "" },
     { "vim_navigation_next_unread", "" },
     { "vim_navigation_prev_unread", "" },
     { "vim_navigation_delete_msg", "" },

@@ -5003,6 +5003,8 @@ void UiModel::KeyHandler(wint_t p_Key)
   static wint_t keyVimNavigationRight = UiKeyConfig::GetKey("vim_navigation_right");
   static wint_t keyVimNavigationNext = UiKeyConfig::GetKey("vim_navigation_next");
   static wint_t keyVimNavigationPrev = UiKeyConfig::GetKey("vim_navigation_prev");
+  static wint_t keyVimNavigationNextPage = UiKeyConfig::GetKey("vim_navigation_next_page");
+  static wint_t keyVimNavigationPrevPage = UiKeyConfig::GetKey("vim_navigation_prev_page");
   static wint_t keyVimNavigationNextUnread = UiKeyConfig::GetKey("vim_navigation_next_unread");
   static wint_t keyVimNavigationPrevUnread = UiKeyConfig::GetKey("vim_navigation_prev_unread");
   static wint_t keyVimNavigationDeleteMsg = UiKeyConfig::GetKey("vim_navigation_delete_msg");
@@ -5190,12 +5192,12 @@ void UiModel::KeyHandler(wint_t p_Key)
   {
     OnKeyNewContact();
   }
-  else if (p_Key == keyPrevPage)
+  else if (p_Key == keyPrevPage || (!isEntryFocused && p_Key == keyVimNavigationPrevPage))
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyPrevPage();
   }
-  else if (p_Key == keyNextPage)
+  else if (p_Key == keyNextPage || (!isEntryFocused && p_Key == keyVimNavigationNextPage))
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeyNextPage();
