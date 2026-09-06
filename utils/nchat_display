@@ -71,7 +71,7 @@ if [ "$text" ]; then
 		*)
 			file="$cache/$(printf '%s' "$url" | cut -c -200 | sed 's|/|_|g ; s/$/.jpg/')"
 			if [ ! -f "$file" ]; then
-				swayimg --execute='swayimg.on_initialized(function() swayimg.title = "chat" end)' --appid=img_whats_view --size=600x600 "$HOME/Backup/Pictures/loading_icon.gif" >/dev/null 2>&1 &
+				swayimg --appid=img_whats_view --size=600x600 "$HOME/Backup/Pictures/loading_icon.gif" >/dev/null 2>&1 &
 
 				helium --headless=new --user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36" --window-size=600,600 --screenshot="$file" "$url" </dev/null
 			fi
