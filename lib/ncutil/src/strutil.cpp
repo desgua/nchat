@@ -61,7 +61,14 @@ std::string StrUtil::EscapeRawUrls(const std::string& p_Str)
 {
   std::string str = p_Str;
   std::string rv;
-  std::regex rg("\\(?\\[?(http|https):\\/\\/([^\\s]+)");
+  std::regex rg(
+    "\\(?\\[?(?:"
+    "https?:\\/\\/[^\\s]+"
+    "|www\\.[^\\s]+"
+    "|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*"
+    "\\.(?:com|org|net)(?:\\.[a-zA-Z]{2})?(?:\\/[^\\s]*)?"
+    ")"
+  );
   std::smatch sm;
   while (regex_search(str, sm, rg))
   {
@@ -113,7 +120,14 @@ std::vector<std::string> StrUtil::ExtractUrlsFromStr(const std::string& p_Str)
 {
   std::string str = p_Str;
   std::vector<std::string> rv;
-  std::regex rg("\\(?(http|https):\\/\\/([^\\s]+)");
+  std::regex rg(
+    "\\(?\\[?(?:"
+    "https?:\\/\\/[^\\s]+"
+    "|www\\.[^\\s]+"
+    "|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*"
+    "\\.(?:com|org|net)(?:\\.[a-zA-Z]{2})?(?:\\/[^\\s]*)?"
+    ")"
+  );
   std::smatch sm;
   while (regex_search(str, sm, rg))
   {
