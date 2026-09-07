@@ -5188,7 +5188,7 @@ void UiModel::KeyHandler(wint_t p_Key)
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OpenProfilePhoto();
   }
-  else if (p_Key == keyNewContact || (isListFocused && p_Key == keyVimNavigationNewContact))
+  else if (p_Key == keyNewContact || (!isEntryFocused && p_Key == keyVimNavigationNewContact))
   {
     OnKeyNewContact();
   }
