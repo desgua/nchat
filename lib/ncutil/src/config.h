@@ -9,7 +9,6 @@
 
 #include <map>
 #include <string>
-#include <ctime>
 
 class Config
 {
@@ -30,5 +29,4 @@ public:
 private:
   std::map<std::string, std::string> m_Map;
   std::string m_Path;
-  mutable std::time_t m_LoadedTime = 0;
 };

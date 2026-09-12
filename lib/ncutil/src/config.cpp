@@ -31,16 +31,6 @@ Config::~Config()
 {
 }
 
-static time_t GetFileMTime(const std::string& p_Path)
-{
-  struct stat st;
-  if (stat(p_Path.c_str(), &st) == 0)
-  {
-    return st.st_mtime;
-  }
-  return 0;
-}
-
 void Config::Load(const std::string& p_Path)
 {
   m_Path = p_Path;
@@ -79,8 +69,6 @@ void Config::Load(const std::string& p_Path)
 
     m_Map[param] = value;
   }
-
-  m_LoadedTime = GetFileMTime(p_Path);
 }
 
 void Config::Save() const
@@ -90,16 +78,6 @@ void Config::Save() const
 
 void Config::Save(const std::string& p_Path) const
 {
-  if (m_LoadedTime != 0)
-  {
-    const time_t currentMTime = GetFileMTime(p_Path);
-    if ((currentMTime != 0) && (currentMTime != m_LoadedTime))
-    {
-      LOG_WARNING("skip save, \"%s\" modified externally", p_Path.c_str());
-      return;
-    }
-  }
-
   std::ofstream stream;
   stream.open(p_Path, std::ios::binary);
   if (stream.fail())
@@ -111,8 +89,6 @@ void Config::Save(const std::string& p_Path) const
   {
     stream << item.first << "=" << item.second << std::endl;
   }
-
-  m_LoadedTime = GetFileMTime(p_Path);
 }
 
 std::string Config::Get(const std::string& p_Param) const
