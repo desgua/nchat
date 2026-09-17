@@ -181,6 +181,7 @@ void IrChat::DisconnectSocket()
   std::unique_lock<std::mutex> lock(m_SocketMutex);
   if (m_Socket != -1)
   {
+    shutdown(m_Socket, SHUT_RDWR);
     close(m_Socket);
     m_Socket = -1;
   }
