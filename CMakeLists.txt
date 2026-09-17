@@ -223,6 +223,10 @@ message(STATUS "WhatsApp: ${HAS_WHATSAPP}")
 option(HAS_SIGNAL "Signal" OFF)
 message(STATUS "Signal: ${HAS_SIGNAL}")
 
+# Optional component - IRC
+option(HAS_IRC "IRC" ON)
+message(STATUS "IRC: ${HAS_IRC}")
+
 # musl restrictions - Go c-archives built with a stock Go toolchain segfault
 # at startup on musl (nchat issue #204 / Go PR #69325), so on musl WhatsApp and
 # Signal (both Go/cgo) require a patched Go toolchain, asserted via
@@ -479,6 +483,10 @@ endif()
 if(HAS_TELEGRAM)
   add_subdirectory(lib/tgchat)
 endif()
+if(HAS_IRC)
+  add_subdirectory(lib/irchat)
+endif()
+
 if(HAS_COMBINED_GOLIB)
   # Combined WhatsApp+Signal c-archive; added before the protocol dirs so its
   # ref-cgogostat target and LIBSIGNAL_FFI_PATH / GO_LIBRARIES are available when
@@ -527,6 +535,14 @@ if(HAS_DUMMY)
   target_compile_definitions(nchat PRIVATE HAS_DUMMY="${HAS_DUMMY}")
   if(NOT HAS_DYNAMICLOAD)
     target_link_libraries(nchat PUBLIC duchat)
+  endif()
+endif()
+
+if(HAS_IRC)
+  target_include_directories(nchat PRIVATE "lib/irchat/src")
+  target_compile_definitions(nchat PRIVATE HAS_IRC="${HAS_IRC}")
+  if(NOT HAS_DYNAMICLOAD)
+    target_link_libraries(nchat PUBLIC irchat)
   endif()
 endif()
 
@@ -658,6 +674,7 @@ if(HAS_SHARED_LIBS)
     COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libtdclientshared${CMAKE_SHARED_LIBRARY_SUFFIX}"
     COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libtgchat${CMAKE_SHARED_LIBRARY_SUFFIX}"
     COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libduchat${CMAKE_SHARED_LIBRARY_SUFFIX}"
+    COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libirchat${CMAKE_SHARED_LIBRARY_SUFFIX}"
     COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libwmchat${CMAKE_SHARED_LIBRARY_SUFFIX}"
     COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}/libsgchat${CMAKE_SHARED_LIBRARY_SUFFIX}"
     COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/doc/nchat/THIRD_PARTY_LICENSES"
@@ -703,6 +720,14 @@ if(CMAKE_BUILD_TYPE MATCHES "Debug")
     target_compile_definitions(devnchat PRIVATE HAS_DUMMY="${HAS_DUMMY}")
     if(NOT HAS_DYNAMICLOAD)
       target_link_libraries(devnchat PUBLIC duchat)
+    endif()
+  endif()
+
+  if(HAS_IRC)
+    target_include_directories(devnchat PRIVATE "lib/irchat/src")
+    target_compile_definitions(devnchat PRIVATE HAS_IRC="${HAS_IRC}")
+    if(NOT HAS_DYNAMICLOAD)
+      target_link_libraries(devnchat PUBLIC irchat)
     endif()
   endif()
 
@@ -761,7 +786,7 @@ if(HAS_WHATSAPP AND HAS_SIGNAL)
   # Order the check after every end product. Depending on nchat alone is not
   # enough - in a dynamic-load build it does not depend on the protocol libraries,
   # so the check would then run in the middle of the build output.
-  foreach(NCHAT_TARGET nchat devnchat duchat tgchat wmchat sgchat)
+  foreach(NCHAT_TARGET nchat devnchat duchat tgchat wmchat sgchat irchat)
     if(TARGET ${NCHAT_TARGET})
       add_dependencies(checkgodeps ${NCHAT_TARGET})
     endif()

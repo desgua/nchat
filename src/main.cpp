@@ -46,6 +46,10 @@
 #include "sgchat.h"
 #endif
 
+#ifdef HAS_IRC
+#include "irchat.h"
+#endif
+
 static std::string GetFeatures();
 static void RemoveProfile();
 static std::shared_ptr<Protocol> SetupProfile();
@@ -131,6 +135,9 @@ static std::vector<std::shared_ptr<ProtocolBaseFactory>> GetProtocolFactorys()
 #endif
 #ifdef HAS_SIGNAL
     std::shared_ptr<ProtocolBaseFactory>(new ProtocolFactory<SgChat>()),
+#endif
+#ifdef HAS_IRC
+    std::shared_ptr<ProtocolBaseFactory>(new ProtocolFactory<IrChat>()),
 #endif
   };
 

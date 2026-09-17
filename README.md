@@ -37,6 +37,21 @@ Added Features
 - Display attachment file sizes
 - Display audio and video duration
 - Add a shortcut to trigger reconnection when the connection fails
+- IRC protocol:  
+    after configuring it with `nchat -s`, manually edit `~/.config/nchat_dummy/profiles/IRC_/irc.conf` and add:  
+```
+host=irc.libera.chat
+port=6667
+nick=my_awesome_nick
+user=my_user_login
+password=my_notsosecure_plain_pass
+realname=First and Last Name
+channel=#dwl
+channel=#test
+channel=#foot
+channel=#mutt
+```
+
 
 Features
 --------
