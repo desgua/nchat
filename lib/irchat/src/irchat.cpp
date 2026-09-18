@@ -26,6 +26,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <cctype>
 
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -150,6 +151,207 @@ static bool ConfigureSocketKeepAlive(int sock)
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
 
   return true;
+}
+
+static std::string IrcToMarkdown(const std::string& text)
+{
+  std::string result;
+  result.reserve(text.size());
+
+  bool inBold = false;
+  bool inItalic = false;
+  bool inStrike = false;
+  bool inCode = false;
+
+  size_t len = text.size();
+  for (size_t i = 0; i < len; ++i)
+  {
+    unsigned char c = text[i];
+
+    // 1. ^B (\x02): Bold toggle
+    if (c == '\x02')
+    {
+      result += "*";
+      inBold = !inBold;
+      continue;
+    }
+
+    // 2. ^] (\x1D): Italic toggle
+    if (c == '\x1D')
+    {
+      result += "_";
+      inItalic = !inItalic;
+      continue;
+    }
+
+    // 3. ^_ (\x1F): Underline (Markdown doesn't have standard underline; map to italic or ignore)
+    if (c == '\x1F')
+    {
+      result += "_";
+      inItalic = !inItalic;
+      continue;
+    }
+
+    // 4. ^~ (\x1E): Strikethrough toggle
+    if (c == '\x1E')
+    {
+      result += "~";
+      inStrike = !inStrike;
+      continue;
+    }
+
+    // 5. ^Q (\x11): Monospace / Fixed-width font toggle
+    if (c == '\x11')
+    {
+      result += "`";
+      inCode = !inCode;
+      continue;
+    }
+
+    // 6. ^O (\x0F): Reset all formatting
+    if (c == '\x0F')
+    {
+      if (inCode)   { result += "`"; inCode = false; }
+      if (inStrike) { result += "~"; inStrike = false; }
+      if (inItalic) { result += "_"; inItalic = false; }
+      if (inBold)   { result += "*"; inBold = false; }
+      continue;
+    }
+
+    // 7. ^C (\x03): Color code \x03[FG][,BG]
+    // Consumes colors so digits like \x0304 don't leak into the message
+    if (c == '\x03')
+    {
+      // Optional 1-2 digits for foreground color
+      if (i + 1 < len && isdigit(text[i + 1]))
+      {
+        i++;
+        if (i + 1 < len && isdigit(text[i + 1]))
+        {
+          i++;
+        }
+        // Optional comma and 1-2 digits for background color
+        if (i + 1 < len && text[i + 1] == ',')
+        {
+          if (i + 2 < len && isdigit(text[i + 2]))
+          {
+            i += 2;
+            if (i + 1 < len && isdigit(text[i + 1]))
+            {
+              i++;
+            }
+          }
+        }
+      }
+      continue;
+    }
+
+    // 8. ^[ (\x1B): ANSI Escape Sequences (\x1B[...m)
+    if (c == '\x1B')
+    {
+      if (i + 1 < len && text[i + 1] == '[')
+      {
+        size_t j = i + 2;
+        while (j < len && (isdigit(text[j]) || text[j] == ';'))
+        {
+          j++;
+        }
+        if (j < len && text[j] == 'm')
+        {
+          std::string codeStr = text.substr(i + 2, j - (i + 2));
+          std::stringstream ss(codeStr);
+          std::string token;
+
+          if (codeStr.empty()) // \x1B[m is equivalent to \x1B[0m (reset)
+          {
+            if (inCode)   { result += "`"; inCode = false; }
+            if (inStrike) { result += "~"; inStrike = false; }
+            if (inItalic) { result += "_"; inItalic = false; }
+            if (inBold)   { result += "*"; inBold = false; }
+          }
+
+          while (std::getline(ss, token, ';'))
+          {
+            int code = token.empty() ? 0 : std::stoi(token);
+            if (code == 0) // Reset
+            {
+              if (inCode)   { result += "`"; inCode = false; }
+              if (inStrike) { result += "~"; inStrike = false; }
+              if (inItalic) { result += "_"; inItalic = false; }
+              if (inBold)   { result += "*"; inBold = false; }
+            }
+            else if (code == 1 && !inBold) // Bold ON
+            {
+              result += "*";
+              inBold = true;
+            }
+            else if (code == 22 && inBold) // Bold OFF
+            {
+              result += "*";
+              inBold = false;
+            }
+            else if (code == 3 && !inItalic) // Italic ON
+            {
+              result += "_";
+              inItalic = true;
+            }
+            else if (code == 23 && inItalic) // Italic OFF
+            {
+              result += "_";
+              inItalic = false;
+            }
+          }
+          i = j; // Advance past the ANSI sequence
+          continue;
+        }
+      }
+    }
+
+    // Normal character
+    result += c;
+  }
+
+  // In IRC, authors often don't close tags before the end of the line.
+  // We must close all active markdown tags so nchat renders them properly.
+  if (inCode)   result += "`";
+  if (inStrike) result += "~";
+  if (inItalic) result += "_";
+  if (inBold)   result += "*";
+
+  return result;
+}
+
+static std::string MarkdownToIrc(const std::string& text)
+{
+  std::string result;
+  bool inBold = false;
+  bool inItalic = false;
+
+  for (size_t i = 0; i < text.size(); ++i)
+  {
+    if (text[i] == '*' && (i == 0 || text[i-1] != '\\'))
+    {
+      result += "\x02"; // ^B
+      inBold = !inBold;
+    }
+    else if (text[i] == '_' && (i == 0 || text[i-1] != '\\'))
+    {
+      result += "\x1D"; // ^]
+      inItalic = !inItalic;
+    }
+    else
+    {
+      result += text[i];
+    }
+  }
+
+  // If unclosed, append reset
+  if (inBold || inItalic)
+  {
+    result += "\x0F";
+  }
+
+  return result;
 }
 
 void IrChat::InitConfig()
@@ -467,7 +669,7 @@ void IrChat::HandleLine(const std::string& p_Line)
     if (msg.params.size() < 2) return;
 
     std::string target = msg.params[0];
-    std::string text = msg.params[1];
+    std::string text = IrcToMarkdown(msg.params[1]);
     std::string nick = PrefixToNick(msg.prefix);
 
     bool isGroup = IsGroupChat(target);
@@ -827,7 +1029,8 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
         }
 
         // Send over IRC socket
-        bool ok = SendLine("PRIVMSG " + targetChatId + " :" + textToSend);
+        std::string ircPayload = MarkdownToIrc(textToSend);
+        bool ok = SendLine("PRIVMSG " + targetChatId + " :" + ircPayload);
 
         // 1. Notify the original chat request -> clears the active input box
         std::shared_ptr<SendMessageNotify> sendMessageNotify = std::make_shared<SendMessageNotify>(m_ProfileId);
