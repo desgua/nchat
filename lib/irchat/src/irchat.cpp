@@ -171,6 +171,7 @@ bool IrChat::ConnectSocket()
     return false;
   }
 
+  std::unique_lock<std::mutex> lock(m_SocketMutex);
   m_Socket = sock;
   LOG_DEBUG("irc connected to %s:%d", m_Host.c_str(), m_Port);
   return true;
@@ -444,6 +445,59 @@ void IrChat::HandleLine(const std::string& p_Line)
     return;
   }
 
+  if (msg.command == "353") // RPL_NAMREPLY
+  {
+    if (msg.params.size() < 4) return;
+    std::string channel = msg.params[2];
+    std::istringstream iss(msg.params[3]);
+    std::string nick;
+    while (iss >> nick)
+    {
+      // Strip channel-role prefixes (@ op, + voice, etc.)
+      while (!nick.empty() && (nick[0] == '@' || nick[0] == '+' || nick[0] == '%'))
+      {
+        nick.erase(0, 1);
+      }
+      if (nick.empty()) continue;
+
+      EnsureContact(nick, nick);
+      m_PendingNames[channel].insert(nick);
+    }
+    return;
+  }
+
+  if (msg.command == "366") // RPL_ENDOFNAMES
+  {
+    if (msg.params.size() < 2) return;
+    std::string channel = msg.params[1];
+
+    auto it = m_PendingNames.find(channel);
+    if (it != m_PendingNames.end())
+    {
+      std::shared_ptr<NewGroupMembersNotify> newGroupMembersNotify =
+        std::make_shared<NewGroupMembersNotify>(m_ProfileId);
+      newGroupMembersNotify->chatId = channel;
+      for (const std::string& nick : it->second)
+      {
+        ContactInfo contactInfo;
+        // Prefixed so id != name — the shared group-member dialog
+        // (uigroupmemberlistdialog.cpp) filters out entries where
+        // name == memberId, assuming that means "unresolved contact"
+        // (true for WhatsApp/Signal's phone-number/UUID ids, but IRC's
+        // id IS the nick by design). This id is scoped to this feature
+        // only — never used as a JOIN/PRIVMSG target or matched against
+        // chatId/senderId anywhere, so it's safe to differ from the
+        // nick used elsewhere for messaging and sender-name display.
+        contactInfo.id = "member:" + nick;
+        contactInfo.name = nick;
+        newGroupMembersNotify->contactInfos.push_back(contactInfo);
+      }
+      CallMessageHandler(newGroupMembersNotify);
+      m_PendingNames.erase(it);
+    }
+    return;
+  }
+
   if ((msg.command == "473") || (msg.command == "474") || (msg.command == "475") ||
       (msg.command == "477") || (msg.command == "471") || (msg.command == "403"))
   {
@@ -664,26 +718,84 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
         std::shared_ptr<SendMessageRequest> sendMessageRequest =
           std::static_pointer_cast<SendMessageRequest>(p_RequestMessage);
 
-        bool ok = SendLine("PRIVMSG " + sendMessageRequest->chatId + " :" +
-                            sendMessageRequest->chatMessage.text);
+        std::string targetChatId = sendMessageRequest->chatId;
+        std::string textToSend = sendMessageRequest->chatMessage.text;
+        bool isSlashMsgOrQuery = false;
 
+        // Check for /msg <nick> [text] or /query <nick> [text]
+        if (textToSend.rfind("/msg ", 0) == 0 || textToSend.rfind("/query ", 0) == 0)
+        {
+          isSlashMsgOrQuery = true;
+          size_t firstSpace = textToSend.find(' ');
+          size_t secondSpace = textToSend.find(' ', firstSpace + 1);
+
+          if (secondSpace == std::string::npos)
+          {
+            // "/msg nick" or "/query nick" without text
+            targetChatId = textToSend.substr(firstSpace + 1);
+            textToSend = "";
+          }
+          else
+          {
+            // "/msg nick some text here"
+            targetChatId = textToSend.substr(firstSpace + 1, secondSpace - (firstSpace + 1));
+            size_t textStart = textToSend.find_first_not_of(' ', secondSpace);
+            textToSend = (textStart != std::string::npos) ? textToSend.substr(textStart) : "";
+          }
+
+          // Strip any mode prefixes like @, +, %
+          if (!targetChatId.empty() && (targetChatId[0] == '@' || targetChatId[0] == '+' || targetChatId[0] == '%'))
+          {
+            targetChatId.erase(0, 1);
+          }
+
+          if (targetChatId.empty())
+          {
+            LOG_WARNING("irc /msg or /query missing target nickname");
+            std::shared_ptr<SendMessageNotify> notify = std::make_shared<SendMessageNotify>(m_ProfileId);
+            notify->success = false;
+            notify->chatId = sendMessageRequest->chatId;
+            notify->chatMessage = sendMessageRequest->chatMessage;
+            CallMessageHandler(notify);
+            break;
+          }
+
+          // Register DM chat and contact with nchat
+          EnsureChat(targetChatId, false /* p_IsGroup */);
+          EnsureContact(targetChatId, targetChatId);
+
+          // If /query with no payload, acknowledge success so nchat clears the input
+          if (textToSend.empty())
+          {
+            std::shared_ptr<SendMessageNotify> notify = std::make_shared<SendMessageNotify>(m_ProfileId);
+            notify->success = true;
+            notify->chatId = sendMessageRequest->chatId; // Must match origin to clear input
+            notify->chatMessage = sendMessageRequest->chatMessage;
+            notify->chatMessage.isOutgoing = true;
+            CallMessageHandler(notify);
+            break;
+          }
+        }
+
+        // Send over IRC socket
+        bool ok = SendLine("PRIVMSG " + targetChatId + " :" + textToSend);
+
+        // 1. Notify the original chat request -> clears the active input box
         std::shared_ptr<SendMessageNotify> sendMessageNotify = std::make_shared<SendMessageNotify>(m_ProfileId);
         sendMessageNotify->success = ok;
-        sendMessageNotify->chatId = sendMessageRequest->chatId;
+        sendMessageNotify->chatId = sendMessageRequest->chatId; // Always match original request
         sendMessageNotify->chatMessage = sendMessageRequest->chatMessage;
         sendMessageNotify->chatMessage.isOutgoing = true;
         CallMessageHandler(sendMessageNotify);
 
+        // 2. Put the sent message into the target chat history
         if (ok)
         {
-          // No server echo of our own PRIVMSG without IRCv3 echo-message,
-          // so build the self-sent message locally, same shape as an
-          // incoming PRIVMSG in HandleLine(), instead of waiting on a
-          // network confirmation the way sgchat does.
           ChatMessage chatMessage = sendMessageRequest->chatMessage;
-          if (chatMessage.id.empty())
+          chatMessage.text = textToSend;
+          if (chatMessage.id.empty() || isSlashMsgOrQuery)
           {
-            chatMessage.id = sendMessageRequest->chatId + "_" + std::to_string(time(nullptr)) + "_" + m_Nick;
+            chatMessage.id = targetChatId + "_" + std::to_string(time(nullptr)) + "_" + m_Nick;
           }
           chatMessage.senderId = m_Nick;
           chatMessage.isOutgoing = true;
@@ -695,7 +807,7 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
 
           std::shared_ptr<NewMessagesNotify> newMessagesNotify = std::make_shared<NewMessagesNotify>(m_ProfileId);
           newMessagesNotify->success = true;
-          newMessagesNotify->chatId = sendMessageRequest->chatId;
+          newMessagesNotify->chatId = targetChatId; // Routes message to recipient window
           newMessagesNotify->cached = false;
           newMessagesNotify->sequence = true;
           newMessagesNotify->chatMessages.push_back(chatMessage);
@@ -755,6 +867,14 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
         CallMessageHandler(markMessageReadNotify);
       }
       break;
+
+      case GetGroupMembersRequestType:
+        {
+          std::shared_ptr<GetGroupMembersRequest> getGroupMembersRequest =
+            std::static_pointer_cast<GetGroupMembersRequest>(p_RequestMessage);
+          SendLine("NAMES " + getGroupMembersRequest->chatId);
+        }
+        break;
 
     default:
       LOG_DEBUG("irc unhandled request type %d", p_RequestMessage->GetMessageType());

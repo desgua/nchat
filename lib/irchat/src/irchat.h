@@ -17,6 +17,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <unordered_set>
 
 #include "protocol.h"
 
@@ -120,6 +121,7 @@ private:
   mutable std::mutex m_ChatsMutex;
   std::map<std::string, bool> m_KnownChats;
   std::map<std::string, std::string> m_KnownNicks;
+  std::map<std::string, std::unordered_set<std::string>> m_PendingNames;
 
   // cache
   static const int s_CacheDirVersion = 0;
