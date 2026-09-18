@@ -14,6 +14,9 @@
 //   - real Config class integration (using ad-hoc parsing for now)
 
 #include "irchat.h"
+#include "log.h"
+#include "status.h"
+#include "messagecache.h"
 
 #include <cstring>
 #include <netdb.h>
@@ -24,9 +27,9 @@
 #include <fstream>
 #include <sstream>
 
-#include "log.h"
-#include "status.h"
-#include "messagecache.h"
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/time.h>
 
 extern "C" IrChat* CreateIrChat()
 {
@@ -107,6 +110,48 @@ bool IrChat::CloseProfile()
   return true;
 }
 
+static bool ConfigureSocketKeepAlive(int sock)
+{
+  // Enable TCP keepalive
+  int optval = 1;
+  socklen_t optlen = sizeof(optval);
+  if (setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &optval, optlen) < 0)
+  {
+    LOG_DEBUG("irc setsockopt SO_KEEPALIVE failed: %s", strerror(errno));
+    return false;
+  }
+
+  // Set Idle time before sending first keepalive probe
+  int idleTime = 30;
+  if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &idleTime, sizeof(idleTime)) < 0)
+  {
+    LOG_DEBUG("irc setsockopt TCP_KEEPIDLE/TCP_KEEPALIVE failed: %s", strerror(errno));
+  }
+
+  // Interval between retry probes if no response
+  int interval = 10;
+  if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval)) < 0)
+  {
+    LOG_DEBUG("irc setsockopt TCP_KEEPINTVL failed: %s", strerror(errno));
+  }
+
+  // Maximum number of failed probes before dropping connection
+  int count = 3;
+  if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &count, sizeof(count)) < 0)
+  {
+    LOG_DEBUG("irc setsockopt TCP_KEEPCNT failed: %s", strerror(errno));
+  }
+
+  // Set socket receive timeout
+  // This ensures a blocking recv() will unblock periodically if the interface drops.
+  struct timeval tv;
+  tv.tv_sec = 60;
+  tv.tv_usec = 0;
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+
+  return true;
+}
+
 void IrChat::InitConfig()
 {
   // Ad-hoc "key=value" line parser as a placeholder. Swap for nchat's
@@ -156,6 +201,7 @@ bool IrChat::ConnectSocket()
 
     if (connect(sock, p->ai_addr, p->ai_addrlen) == 0)
     {
+      ConfigureSocketKeepAlive(sock);
       break;
     }
 
@@ -171,8 +217,11 @@ bool IrChat::ConnectSocket()
     return false;
   }
 
+  {
   std::unique_lock<std::mutex> lock(m_SocketMutex);
   m_Socket = sock;
+  }
+
   LOG_DEBUG("irc connected to %s:%d", m_Host.c_str(), m_Port);
   return true;
 }
@@ -751,7 +800,7 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
 
           if (targetChatId.empty())
           {
-            LOG_WARNING("irc /msg or /query missing target nickname");
+            LOG_DEBUG("irc /msg or /query missing target nickname");
             std::shared_ptr<SendMessageNotify> notify = std::make_shared<SendMessageNotify>(m_ProfileId);
             notify->success = false;
             notify->chatId = sendMessageRequest->chatId;
