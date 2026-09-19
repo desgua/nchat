@@ -124,10 +124,18 @@ static bool ConfigureSocketKeepAlive(int sock)
 
   // Set Idle time before sending first keepalive probe
   int idleTime = 30;
+  // Linux defines TCP_KEEPIDLE and MacOS defines TCP_KEEPALIVE
+#if defined(TCP_KEEPIDLE)
   if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &idleTime, sizeof(idleTime)) < 0)
   {
-    LOG_DEBUG("irc setsockopt TCP_KEEPIDLE/TCP_KEEPALIVE failed: %s", strerror(errno));
+    LOG_DEBUG("irc setsockopt TCP_KEEPIDLE failed: %s", strerror(errno));
   }
+#elif defined(TCP_KEEPALIVE)
+  if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPALIVE, &idleTime, sizeof(idleTime)) < 0)
+  {
+    LOG_DEBUG("irc setsockopt TCP_KEEPALIVE failed: %s", strerror(errno));
+  }
+#endif
 
   // Interval between retry probes if no response
   int interval = 10;
