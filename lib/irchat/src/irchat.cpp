@@ -876,9 +876,19 @@ void IrChat::ReadLoop()
   while (m_Running)
   {
     ssize_t n = recv(m_Socket, recvBuf, sizeof(recvBuf), 0);
-    if (n <= 0)
+    if (n < 0)
     {
-      LOG_DEBUG("irc connection closed or errored");
+      if ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR))
+      {
+        continue; // recv timeout or interrupted syscall — not a disconnect
+      }
+
+      LOG_DEBUG("irc recv error: %s", strerror(errno));
+      return;
+    }
+    else if (n == 0)
+    {
+      LOG_DEBUG("irc connection closed by peer");
       return;
     }
 
@@ -893,6 +903,7 @@ void IrChat::ReadLoop()
     }
   }
 }
+
 void IrChat::Process()
 {
   while (m_Running)
