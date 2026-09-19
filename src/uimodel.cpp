@@ -2818,20 +2818,22 @@ void UiModel::Impl::SortChats()
 
   if (!m_ChatVec.empty())
   {
-    if (m_CurrentChatIndex == -1)
+    bool found = false;
+    for (size_t i = 0; i < m_ChatVec.size(); ++i)
     {
+      if (m_ChatVec.at(i) == m_CurrentChat)
+      {
+        m_CurrentChatIndex = i;
+        found = true;
+        break;
+      }
+    }
+
+    if (!found)
+    {
+      m_CurrentChatIndex = 0;
       m_CurrentChat = m_ChatVec.at(0);
       OnCurrentChatChanged();
-    }
-    else
-    {
-      for (size_t i = 0; i < m_ChatVec.size(); ++i)
-      {
-        if (m_ChatVec.at(i) == m_CurrentChat)
-        {
-          m_CurrentChatIndex = i;
-        }
-      }
     }
   }
 }
