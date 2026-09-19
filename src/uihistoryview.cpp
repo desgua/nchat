@@ -420,8 +420,23 @@ void UiHistoryView::Draw()
       {
         const size_t dist = std::distance(wlines.rbegin(), wline);
         const size_t lineIdx = (dist < wlines.size()) ? (wlines.size() - 1 - dist) : 0;
-        static const std::vector<TextRun> emptyRuns;
-        const std::vector<TextRun>& runs = (lineIdx < wlineRuns.size()) ? wlineRuns[lineIdx] : emptyRuns;
+
+        std::vector<TextRun> fallbackRuns;
+        const std::vector<TextRun>* pRuns = nullptr;
+
+        // Use pre-wrapped runs if line counts match; fallback to parsing *wline directly
+        // if attachments, quotes, or reactions added extra lines to wlines
+        if (wlines.size() == wlineRuns.size() && lineIdx < wlineRuns.size())
+        {
+          pRuns = &wlineRuns[lineIdx];
+        }
+        else
+        {
+          fallbackRuns = StrUtil::ParseMarkdownRuns(*wline);
+          pRuns = &fallbackRuns;
+        }
+
+        const std::vector<TextRun>& runs = *pRuns;
 
         wmove(m_PaddedWin, y, 0);
 
