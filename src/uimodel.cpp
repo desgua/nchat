@@ -2078,6 +2078,26 @@ void UiModel::Impl::MessageHandler(std::shared_ptr<ServiceMessage> p_ServiceMess
               chatInfo.isMuted = true;
             }
 
+            // Preserve existing metadata if the incoming chatInfo has default/uninitialized values
+            // to avoid jumping to the middle of the chat list when using IRC protocol
+            auto it = m_ChatInfos[profileId].find(chatInfo.id);
+            if (it != m_ChatInfos[profileId].end())
+            {
+              if ((chatInfo.lastMessageTime <= 0) && (it->second.lastMessageTime > 0))
+              {
+                chatInfo.lastMessageTime = it->second.lastMessageTime;
+              }
+              if (!chatInfo.isPinned && it->second.isPinned)
+              {
+                chatInfo.isPinned = it->second.isPinned;
+              }
+              if (!chatInfo.isMuted && it->second.isMuted)
+              {
+                chatInfo.isMuted = it->second.isMuted;
+              }
+            }
+            // end of fix
+
             m_ChatInfos[profileId][chatInfo.id] = chatInfo;
 
             if (chatInfo.isArchived) continue;
