@@ -51,7 +51,8 @@ channel=#test
 channel=#foot
 channel=#mutt
 ```
-
+  
+    to message or query a user, send `/msg user message` or `/query user`  
 
 Features
 --------
