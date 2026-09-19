@@ -292,6 +292,68 @@ bool StrUtil::NumHasPrefix(const std::string& p_Str, const char p_Ch)
   return (!s.empty() && (s.at(0) == p_Ch));
 }
 
+std::vector<TextRun> StrUtil::ParseMarkdownRuns(const std::wstring& p_Line)
+{
+  // Deliberately simple, single-pass, single-line parser: recognizes only
+  // *bold* and _italic_ spans, does not support nesting (*_both_*), and does
+  // not look across line boundaries. A span must have a non-space character
+  // immediately inside each delimiter. Underscore spans additionally require
+  // a non-word-character (or line edge) on each outer side, so identifiers
+  // like a_variable_name are left alone (asterisks are still allowed
+  // mid-word, matching common chat-markdown behavior).
+  std::vector<TextRun> runs;
+  const size_t len = p_Line.size();
+  size_t i = 0;
+  std::wstring plain;
+
+  auto flushPlain = [&]()
+  {
+    if (!plain.empty())
+    {
+      TextRun run;
+      run.text = plain;
+      runs.push_back(run);
+      plain.clear();
+    }
+  };
+
+  while (i < len)
+  {
+    const wchar_t c = p_Line[i];
+    if ((c == L'*') || (c == L'_'))
+    {
+      const size_t close = p_Line.find(c, i + 1);
+      bool boundaryOk = true;
+      if ((c == L'_') && (close != std::wstring::npos))
+      {
+        auto isWordChar = [](wchar_t wc) { return iswalnum(static_cast<wint_t>(wc)) != 0; };
+        const bool openBoundaryOk = (i == 0) || !isWordChar(p_Line[i - 1]);
+        const bool closeBoundaryOk = ((close + 1) >= len) || !isWordChar(p_Line[close + 1]);
+        boundaryOk = openBoundaryOk && closeBoundaryOk;
+      }
+
+      if (boundaryOk && (close != std::wstring::npos) && (close > (i + 1)) &&
+          (p_Line[i + 1] != L' ') && (p_Line[close - 1] != L' '))
+      {
+        flushPlain();
+        TextRun run;
+        run.text = p_Line.substr(i + 1, close - i - 1);
+        run.bold = (c == L'*');
+        run.italic = (c == L'_');
+        runs.push_back(run);
+        i = close + 1;
+        continue;
+      }
+    }
+
+    plain += c;
+    ++i;
+  }
+
+  flushPlain();
+  return runs;
+}
+
 void StrUtil::ReplaceString(std::string& p_Str, const std::string& p_Search, const std::string& p_Replace)
 {
   size_t pos = 0;
