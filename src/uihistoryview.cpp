@@ -123,6 +123,7 @@ void UiHistoryView::Draw()
     }();
 
     std::vector<std::wstring> wlines;
+    std::vector<std::vector<TextRun>> wlineRuns;
     if (!msg.text.empty())
     {
       std::string text = msg.text;
@@ -132,7 +133,23 @@ void UiHistoryView::Draw()
         text = StrUtil::Textize(text);
       }
 
-      wlines = StrUtil::WordWrap(StrUtil::ToWString(text), m_PaddedW, false, false, false, 2);
+      // Convert to wide string
+      std::wstring wtext = StrUtil::ToWString(text);
+
+      // Wrap markdown across paragraphs and display lines safely
+      wlineRuns = StrUtil::WordWrapMarkdown(wtext, m_PaddedW);
+
+      // Populate wlines from the runs so search, copying, and height calculations
+      // continue working seamlessly with the clean (stripped) text:
+      for (const auto& lineRuns : wlineRuns)
+      {
+        std::wstring lineText;
+        for (const auto& run : lineRuns)
+        {
+          lineText += run.text;
+        }
+        wlines.push_back(lineText);
+      }
     }
 
     // Quoted message
@@ -401,32 +418,17 @@ void UiHistoryView::Draw()
       }
       else
       {
-        // Plain message-text line: parse *bold* / _italic_ into runs and
-        // render each with its own attribute, instead of one flat string.
-        // Position and truncation are tracked in real display columns
-        // (StrUtil::WStringWidth), not character counts, since wide
-        // characters (emoji, CJK, etc.) occupy 2 columns per wchar_t -
-        // using .size() here would drift the x position left of where
-        // text actually lands and let the tail of the line silently
-        // overflow past the window edge.
-        const std::vector<TextRun> runs = StrUtil::ParseMarkdownRuns(*wline);
-        int xpos = 0;
+        const size_t dist = std::distance(wlines.rbegin(), wline);
+        const size_t lineIdx = (dist < wlines.size()) ? (wlines.size() - 1 - dist) : 0;
+        static const std::vector<TextRun> emptyRuns;
+        const std::vector<TextRun>& runs = (lineIdx < wlineRuns.size()) ? wlineRuns[lineIdx] : emptyRuns;
+
+        wmove(m_PaddedWin, y, 0);
+
+        int currentX = 0;
         for (const TextRun& run : runs)
         {
-          if (xpos >= m_PaddedW) break;
-
-          std::wstring seg = run.text;
-          int segWidth = StrUtil::WStringWidth(seg);
-          if ((segWidth + xpos) > m_PaddedW)
-          {
-            int fitLen = (int)seg.size();
-            while ((fitLen > 0) && ((StrUtil::WStringWidth(seg.substr(0, fitLen)) + xpos) > m_PaddedW))
-            {
-              --fitLen;
-            }
-            seg = seg.substr(0, fitLen);
-            segWidth = StrUtil::WStringWidth(seg);
-          }
+          if (currentX >= m_PaddedW) break;
 
           int runAttr = attributeText | colorPairText;
           if (run.bold) runAttr |= A_BOLD;
@@ -437,17 +439,18 @@ void UiHistoryView::Draw()
 #endif
 
           wattron(m_PaddedWin, runAttr);
-          mvwaddnwstr(m_PaddedWin, y, xpos, seg.c_str(), (int)seg.size());
+          waddnwstr(m_PaddedWin, run.text.c_str(), (int)run.text.size());
           wattroff(m_PaddedWin, runAttr);
 
-          xpos += segWidth;
+          currentX += StrUtil::WStringWidth(run.text);
         }
 
-        if (xpos < m_PaddedW)
+        // Pad the remainder of the line with spaces
+        if (currentX < m_PaddedW)
         {
-          const std::wstring wpad(m_PaddedW - xpos, L' ');
+          const std::wstring wpad(m_PaddedW - currentX, L' ');
           wattron(m_PaddedWin, attributeText | colorPairText);
-          mvwaddnwstr(m_PaddedWin, y, xpos, wpad.c_str(), (int)wpad.size());
+          waddnwstr(m_PaddedWin, wpad.c_str(), (int)wpad.size());
           wattroff(m_PaddedWin, attributeText | colorPairText);
         }
       }

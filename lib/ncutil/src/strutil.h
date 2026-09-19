@@ -42,7 +42,9 @@ public:
   static void JumpToPrevMatch(std::wstring& p_Str, int& p_Pos, int p_Offs, std::wstring p_Chars);
   static std::string NumAddPrefix(const std::string& p_Str, const char p_Ch);
   static bool NumHasPrefix(const std::string& p_Str, const char p_Ch);
-  static std::vector<TextRun> ParseMarkdownRuns(const std::wstring& p_Line);
+  static std::vector<TextRun> ParseMarkdownRuns(const std::wstring& p_Text);
+  static std::vector<std::vector<TextRun>> WordWrapRuns(const std::vector<TextRun>& p_Runs, int p_Width);
+  static std::vector<std::vector<TextRun>> WordWrapMarkdown(const std::wstring& p_Text, int p_Width);
   static void ReplaceString(std::string& p_Str, const std::string& p_Search, const std::string& p_Replace);
   static void SanitizeMessageStr(std::string& p_Str);
   static std::vector<std::string> Split(const std::string& p_Str, char p_Sep);
