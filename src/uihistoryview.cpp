@@ -381,62 +381,38 @@ void UiHistoryView::Draw()
       if (isAttachment)
       {
         wattron(m_PaddedWin, attributeText | colorPairTextAttachment);
-        const std::wstring wdisp = StrUtil::TrimPadWString(*wline, m_PaddedW);
-        mvwaddnwstr(m_PaddedWin, y, 0, wdisp.c_str(), std::min((int)wdisp.size(), m_PaddedW));
-        wattroff(m_PaddedWin, attributeText | colorPairTextAttachment);
       }
       else if (isQuote)
       {
         wattron(m_PaddedWin, attributeText | colorPairTextQuoted);
-        const std::wstring wdisp = StrUtil::TrimPadWString(*wline, m_PaddedW);
-        mvwaddnwstr(m_PaddedWin, y, 0, wdisp.c_str(), std::min((int)wdisp.size(), m_PaddedW));
-        wattroff(m_PaddedWin, attributeText | colorPairTextQuoted);
       }
       else if (isReaction)
       {
         wattron(m_PaddedWin, attributeTextNormal | colorPairTextReaction);
-        const std::wstring wdisp = *wline;
-        mvwaddnwstr(m_PaddedWin, y, 0, wdisp.c_str(), std::min((int)wdisp.size(), m_PaddedW));
+      }
+      else
+      {
+        wattron(m_PaddedWin, attributeText | colorPairText);
+      }
+
+      const std::wstring wdisp = isReaction ? *wline : StrUtil::TrimPadWString(*wline, m_PaddedW);
+      mvwaddnwstr(m_PaddedWin, y, 0, wdisp.c_str(), std::min((int)wdisp.size(), m_PaddedW));
+
+      if (isAttachment)
+      {
+        wattroff(m_PaddedWin, attributeText | colorPairTextAttachment);
+      }
+      else if (isQuote)
+      {
+        wattroff(m_PaddedWin, attributeText | colorPairTextQuoted);
+      }
+      else if (isReaction)
+      {
         wattroff(m_PaddedWin, attributeTextNormal | colorPairTextReaction);
       }
       else
       {
-        // Plain message-text line: parse *bold* / _italic_ into runs and
-        // render each with its own attribute, instead of one flat string.
-        const std::vector<TextRun> runs = StrUtil::ParseMarkdownRuns(*wline);
-        int xpos = 0;
-        for (const TextRun& run : runs)
-        {
-          if (xpos >= m_PaddedW) break;
-
-          std::wstring seg = run.text;
-          if (((int)seg.size() + xpos) > m_PaddedW)
-          {
-            seg = seg.substr(0, m_PaddedW - xpos);
-          }
-
-          int runAttr = attributeText | colorPairText;
-          if (run.bold) runAttr |= A_BOLD;
-#ifdef A_ITALIC
-          if (run.italic) runAttr |= A_ITALIC;
-#else
-          if (run.italic) runAttr |= A_UNDERLINE;
-#endif
-
-          wattron(m_PaddedWin, runAttr);
-          mvwaddnwstr(m_PaddedWin, y, xpos, seg.c_str(), (int)seg.size());
-          wattroff(m_PaddedWin, runAttr);
-
-          xpos += (int)seg.size();
-        }
-
-        if (xpos < m_PaddedW)
-        {
-          const std::wstring wpad(m_PaddedW - xpos, L' ');
-          wattron(m_PaddedWin, attributeText | colorPairText);
-          mvwaddnwstr(m_PaddedWin, y, xpos, wpad.c_str(), (int)wpad.size());
-          wattroff(m_PaddedWin, attributeText | colorPairText);
-        }
+        wattroff(m_PaddedWin, attributeText | colorPairText);
       }
 
       if (--y < 0) break;

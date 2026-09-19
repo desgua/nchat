@@ -13,13 +13,6 @@
 
 #define EMOJI_PAD 1
 
-struct TextRun
-{
-  std::wstring text;
-  bool bold = false;
-  bool italic = false;
-};
-
 class StrUtil
 {
 public:
@@ -42,7 +35,6 @@ public:
   static void JumpToPrevMatch(std::wstring& p_Str, int& p_Pos, int p_Offs, std::wstring p_Chars);
   static std::string NumAddPrefix(const std::string& p_Str, const char p_Ch);
   static bool NumHasPrefix(const std::string& p_Str, const char p_Ch);
-  static std::vector<TextRun> ParseMarkdownRuns(const std::wstring& p_Line);
   static void ReplaceString(std::string& p_Str, const std::string& p_Search, const std::string& p_Replace);
   static void SanitizeMessageStr(std::string& p_Str);
   static std::vector<std::string> Split(const std::string& p_Str, char p_Sep);
