@@ -51,8 +51,7 @@ channel=#test
 channel=#foot
 channel=#mutt
 ```
-  
-    to message or query a user, send `/msg user message` or `/query user`  
+  to message or query a IRC user, send `/msg user message` or `/query user` in any IRC channel.  
 
 Features
 --------
