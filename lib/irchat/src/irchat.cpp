@@ -168,7 +168,16 @@ static std::string IrcToMarkdown(const std::string& text)
   {
     unsigned char c = text[i];
 
-    // 1. ^B (\x02): Bold toggle
+    // ^A (\x01): Action -> we will treat it as bold
+    if (c == '\x01')
+    {
+      result += "*";
+      inBold = !inBold;
+      continue;
+    }
+
+
+    // ^B (\x02): Bold toggle
     if (c == '\x02')
     {
       result += "*";
@@ -176,7 +185,7 @@ static std::string IrcToMarkdown(const std::string& text)
       continue;
     }
 
-    // 2. ^] (\x1D): Italic toggle
+    // ^] (\x1D): Italic toggle
     if (c == '\x1D')
     {
       result += "_";
@@ -184,7 +193,7 @@ static std::string IrcToMarkdown(const std::string& text)
       continue;
     }
 
-    // 3. ^_ (\x1F): Underline (Markdown doesn't have standard underline; map to italic or ignore)
+    // ^_ (\x1F): Underline (Markdown doesn't have standard underline; map to italic or ignore)
     if (c == '\x1F')
     {
       result += "_";
@@ -192,7 +201,7 @@ static std::string IrcToMarkdown(const std::string& text)
       continue;
     }
 
-    // 4. ^~ (\x1E): Strikethrough toggle
+    // ^~ (\x1E): Strikethrough toggle
     if (c == '\x1E')
     {
       result += "~";
@@ -200,7 +209,7 @@ static std::string IrcToMarkdown(const std::string& text)
       continue;
     }
 
-    // 5. ^Q (\x11): Monospace / Fixed-width font toggle
+    // ^Q (\x11): Monospace / Fixed-width font toggle
     if (c == '\x11')
     {
       result += "`";
@@ -208,7 +217,7 @@ static std::string IrcToMarkdown(const std::string& text)
       continue;
     }
 
-    // 6. ^O (\x0F): Reset all formatting
+    // ^O (\x0F): Reset all formatting
     if (c == '\x0F')
     {
       if (inCode)   { result += "`"; inCode = false; }
@@ -218,7 +227,7 @@ static std::string IrcToMarkdown(const std::string& text)
       continue;
     }
 
-    // 7. ^C (\x03): Color code \x03[FG][,BG]
+    // ^C (\x03): Color code \x03[FG][,BG]
     // Consumes colors so digits like \x0304 don't leak into the message
     if (c == '\x03')
     {
@@ -246,7 +255,7 @@ static std::string IrcToMarkdown(const std::string& text)
       continue;
     }
 
-    // 8. ^[ (\x1B): ANSI Escape Sequences (\x1B[...m)
+    // ^[ (\x1B): ANSI Escape Sequences (\x1B[...m)
     if (c == '\x1B')
     {
       if (i + 1 < len && text[i + 1] == '[')
@@ -655,6 +664,7 @@ void IrChat::HandleLine(const std::string& p_Line)
     {
       LOG_DEBUG("irc successfully joined %s", channel.c_str());
       EnsureChat(channel, true);
+      EnsureContact(channel, channel);
     }
     else
     {
@@ -963,6 +973,7 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
       newChatsNotify->success = true;
 
       std::unique_lock<std::mutex> lock(m_ChatsMutex);
+      std::vector<std::string> groupChatIds;
       for (const auto& chat : m_KnownChats)
       {
         ChatInfo chatInfo;
@@ -972,6 +983,15 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
       lock.unlock();
 
       CallMessageHandler(newChatsNotify);
+
+      // Channels ride along as regular ContactInfo entries too (mirrors
+      // wmchat, where WhatsApp groups are pushed through the same generic
+      // contact callback as 1:1 contacts) so they're selectable from the
+      // "Open Chat" dialog, not just reachable via the chat switcher.
+      for (const std::string& channel : groupChatIds)
+      {
+        EnsureContact(channel, channel);
+      }
     }
     break;
 
