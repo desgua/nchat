@@ -44,6 +44,7 @@ void UiConfig::Init()
     { "failed_indicator", "\xe2\x9c\x97" },
     { "file_picker_command", "" },
     { "file_picker_persist_dir", "1" },
+    { "focus_history_after_send_msg", "0" },
     { "help_enabled", "0" },
     { "help_prefix_ctrl", "^" },
     { "help_prefix_meta", "M-" },

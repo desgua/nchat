@@ -5253,6 +5253,14 @@ void UiModel::KeyHandler(wint_t p_Key)
   {
     std::unique_lock<owned_mutex> lock(m_ModelMutex);
     GetImpl().OnKeySendMsg();
+    if (isEntryFocused)
+    {
+      std::string focusHistoryAfterSendMsg = UiConfig::GetStr("focus_history_after_send_msg");
+      if (focusHistoryAfterSendMsg == "1")
+      {
+        GetImpl().OnKeyPrevFrame();
+      }
+    }
   }
   else if (p_Key == keyExtEdit || (!isEntryFocused && p_Key == keyVimNavigationExtEdit))
   {
