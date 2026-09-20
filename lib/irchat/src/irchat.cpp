@@ -111,31 +111,6 @@ bool IrChat::CloseProfile()
   return true;
 }
 
-void IrChat::PostSystemMessage(const std::string& p_Text)
-{
-  static const std::string sysChatId = "irc info";
-
-  EnsureChat(sysChatId, false);
-  EnsureContact(sysChatId, "irc info");
-
-  ChatMessage chatMessage;
-  chatMessage.id = sysChatId + "_" + std::to_string(time(nullptr)) + "_" +
-                    std::to_string(m_SysMsgCounter++);
-  chatMessage.senderId = sysChatId;
-  chatMessage.text = p_Text;
-  chatMessage.timeSent = static_cast<int64_t>(time(nullptr)) * 1000;
-  chatMessage.isOutgoing = false;
-  chatMessage.isRead = false;
-
-  std::shared_ptr<NewMessagesNotify> newMessagesNotify = std::make_shared<NewMessagesNotify>(m_ProfileId);
-  newMessagesNotify->success = true;
-  newMessagesNotify->chatId = sysChatId;
-  newMessagesNotify->cached = false;
-  newMessagesNotify->sequence = true;
-  newMessagesNotify->chatMessages.push_back(chatMessage);
-  CallMessageHandler(newMessagesNotify);
-}
-
 static bool ConfigureSocketKeepAlive(int sock)
 {
   // Enable TCP keepalive
@@ -361,6 +336,31 @@ static std::string IrcToMarkdown(const std::string& text)
   if (inBold)   result += "*";
 
   return result;
+}
+
+void IrChat::PostSystemMessage(const std::string& p_Text)
+{
+  static const std::string sysChatId = "irc info";
+
+  EnsureChat(sysChatId, false);
+  EnsureContact(sysChatId, "irc info");
+
+  ChatMessage chatMessage;
+  chatMessage.id = sysChatId + "_" + std::to_string(time(nullptr)) + "_" +
+                    std::to_string(m_SysMsgCounter++);
+  chatMessage.senderId = sysChatId;
+  chatMessage.text = IrcToMarkdown(p_Text);
+  chatMessage.timeSent = static_cast<int64_t>(time(nullptr)) * 1000;
+  chatMessage.isOutgoing = false;
+  chatMessage.isRead = false;
+
+  std::shared_ptr<NewMessagesNotify> newMessagesNotify = std::make_shared<NewMessagesNotify>(m_ProfileId);
+  newMessagesNotify->success = true;
+  newMessagesNotify->chatId = sysChatId;
+  newMessagesNotify->cached = false;
+  newMessagesNotify->sequence = true;
+  newMessagesNotify->chatMessages.push_back(chatMessage);
+  CallMessageHandler(newMessagesNotify);
 }
 
 static std::string MarkdownToIrc(const std::string& text)
