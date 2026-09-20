@@ -1,7 +1,8 @@
 // IrChat.cpp
 //
 // Copyright (c) 2020-2026 Kristofer Berggren
-// co-authored by André Desgualdo Pereira (desgua, kana)
+// irchat.cpp  by André Desgualdo Pereira (desgua, kana)
+//
 // All rights reserved.
 //
 // nchat is distributed under the MIT license, see LICENSE for details.
@@ -9,7 +10,6 @@
 // Deliberately NOT covered yet (left as TODOs / return no-ops):
 //   - TLS (plain-text socket only for now)
 //   - SASL auth
-//   - PART/QUIT membership updates, NAMES (353/366) group member sync
 //   - reactions, edit, pin, archive, delete, typing (no IRC equivalent)
 //   - real Config class integration (using ad-hoc parsing for now)
 
@@ -109,6 +109,31 @@ bool IrChat::CloseProfile()
 {
   m_ProfileId = "";
   return true;
+}
+
+void IrChat::PostSystemMessage(const std::string& p_Text)
+{
+  static const std::string sysChatId = "irc info";
+
+  EnsureChat(sysChatId, false);
+  EnsureContact(sysChatId, "irc info");
+
+  ChatMessage chatMessage;
+  chatMessage.id = sysChatId + "_" + std::to_string(time(nullptr)) + "_" +
+                    std::to_string(m_SysMsgCounter++);
+  chatMessage.senderId = sysChatId;
+  chatMessage.text = p_Text;
+  chatMessage.timeSent = static_cast<int64_t>(time(nullptr)) * 1000;
+  chatMessage.isOutgoing = false;
+  chatMessage.isRead = false;
+
+  std::shared_ptr<NewMessagesNotify> newMessagesNotify = std::make_shared<NewMessagesNotify>(m_ProfileId);
+  newMessagesNotify->success = true;
+  newMessagesNotify->chatId = sysChatId;
+  newMessagesNotify->cached = false;
+  newMessagesNotify->sequence = true;
+  newMessagesNotify->chatMessages.push_back(chatMessage);
+  CallMessageHandler(newMessagesNotify);
 }
 
 static bool ConfigureSocketKeepAlive(int sock)
@@ -762,8 +787,45 @@ void IrChat::HandleLine(const std::string& p_Line)
         newGroupMembersNotify->contactInfos.push_back(contactInfo);
       }
       CallMessageHandler(newGroupMembersNotify);
+      PostSystemMessage("Total of " + std::to_string(it->second.size()) + " nicks in " + channel);
       m_PendingNames.erase(it);
     }
+    return;
+  }
+
+  if (msg.command == "332") // RPL_TOPIC
+  {
+    if (msg.params.size() < 3) return;
+    PostSystemMessage("Topic for " + msg.params[1] + ": " + msg.params[2]);
+    return;
+  }
+
+  if (msg.command == "333") // RPL_TOPICWHOTIME
+  {
+    if (msg.params.size() < 4) return;
+    std::string setter = msg.params[2];
+    time_t setTime = static_cast<time_t>(std::strtoll(msg.params[3].c_str(), nullptr, 10));
+    char buf[64];
+    strftime(buf, sizeof(buf), "%a %b %d %H:%M:%S %Y", localtime(&setTime));
+    PostSystemMessage("Topic for " + msg.params[1] + " set by " + setter + " [" + buf + "]");
+    return;
+  }
+
+  if (msg.command == "329") // RPL_CREATIONTIME
+  {
+    if (msg.params.size() < 3) return;
+    time_t createTime = static_cast<time_t>(std::strtoll(msg.params[2].c_str(), nullptr, 10));
+    char buf[64];
+    strftime(buf, sizeof(buf), "%a %b %d %H:%M:%S %Y", localtime(&createTime));
+    PostSystemMessage("Channel " + msg.params[1] + " created " + std::string(buf));
+    return;
+  }
+
+  if (msg.command == "NOTICE")
+  {
+    if (msg.params.size() < 2) return;
+    std::string from = PrefixToNick(msg.prefix);
+    PostSystemMessage((from.empty() ? "" : "[" + from + "] ") + msg.params[1]);
     return;
   }
 
@@ -774,7 +836,7 @@ void IrChat::HandleLine(const std::string& p_Line)
     LOG_DEBUG("irc join failed (%s): %s", msg.command.c_str(), detail.c_str());
     return;
   }
-  // TODO: PART, QUIT, NICK, NOTICE, 353/366 (NAMES), MODE, TOPIC, ...
+
   LOG_DEBUG("irc unhandled: %s", msg.command.c_str());
 }
 

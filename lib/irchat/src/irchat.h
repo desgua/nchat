@@ -115,6 +115,7 @@ private:
   std::vector<std::string> m_AutoJoinChannels;
   std::string m_ProfileDir;
 
+  void ReadLoop();
   void DoAutoJoin();
   bool m_AutoJoinDone = false;
 
@@ -126,7 +127,9 @@ private:
   // cache
   static const int s_CacheDirVersion = 0;
 
-  void ReadLoop();
+  // irc info
+  void PostSystemMessage(const std::string& p_Text);
+  int m_SysMsgCounter = 0;
 };
 
 extern "C" IrChat* CreateIrChat();
