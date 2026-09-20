@@ -5255,8 +5255,8 @@ void UiModel::KeyHandler(wint_t p_Key)
     GetImpl().OnKeySendMsg();
     if (isEntryFocused)
     {
-      std::string focusHistoryAfterSendMsg = UiConfig::GetStr("focus_history_after_send_msg");
-      if (focusHistoryAfterSendMsg == "1")
+      static const bool focusHistoryAfterSendMsg = UiConfig::GetBool("focus_history_after_send_msg");
+      if (focusHistoryAfterSendMsg)
       {
         GetImpl().OnKeyPrevFrame();
       }
