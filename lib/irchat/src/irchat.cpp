@@ -154,7 +154,7 @@ static bool ConfigureSocketKeepAlive(int sock)
   // Set socket receive timeout
   // This ensures a blocking recv() will unblock periodically if the interface drops.
   struct timeval tv;
-  tv.tv_sec = 60;
+  tv.tv_sec = 5;
   tv.tv_usec = 0;
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
 
@@ -891,14 +891,43 @@ void IrChat::ReadLoop()
   std::string buffer;
   char recvBuf[4096];
 
+  time_t lastRecvTime = time(nullptr);
+  bool pingSent = false;
+
+  const int pingIdleSec = 60;    // Send PING after 60s of silence
+  const int pingTimeoutSec = 90; // Dead connection if no response in 90s (or after resume)
+
   while (m_Running)
   {
     ssize_t n = recv(m_Socket, recvBuf, sizeof(recvBuf), 0);
     if (n < 0)
     {
-      if ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR))
+      if (errno == EINTR)
       {
-        continue; // recv timeout or interrupted syscall — not a disconnect
+        continue;
+      }
+
+      if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+      {
+        time_t now = time(nullptr);
+        int idleSec = static_cast<int>(now - lastRecvTime);
+
+        // 1. If laptop woke up from sleep or server went silent > 90s, disconnect & reconnect
+        if (idleSec >= pingTimeoutSec)
+        {
+          LOG_DEBUG("irc connection timed out (%ds idle, suspend/dead connection). Reconnecting...", idleSec);
+          return;
+        }
+
+        // 2. If idle > 60s, send application-level PING
+        if (idleSec >= pingIdleSec && !pingSent)
+        {
+          LOG_DEBUG("irc sending keepalive ping");
+          SendLine("PING :" + std::to_string(now));
+          pingSent = true;
+        }
+
+        continue;
       }
 
       LOG_DEBUG("irc recv error: %s", strerror(errno));
@@ -909,6 +938,10 @@ void IrChat::ReadLoop()
       LOG_DEBUG("irc connection closed by peer");
       return;
     }
+
+    // Reset idle timers on any incoming data from server
+    lastRecvTime = time(nullptr);
+    pingSent = false;
 
     buffer.append(recvBuf, static_cast<size_t>(n));
 
