@@ -1254,13 +1254,43 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
       }
       break;
 
-      case GetGroupMembersRequestType:
+    case GetGroupMembersRequestType:
+      {
+        std::shared_ptr<GetGroupMembersRequest> getGroupMembersRequest =
+          std::static_pointer_cast<GetGroupMembersRequest>(p_RequestMessage);
+        SendLine("NAMES " + getGroupMembersRequest->chatId);
+      }
+      break;
+
+    case DeleteChatRequestType:
+      {
+        std::shared_ptr<DeleteChatRequest> deleteChatRequest =
+          std::static_pointer_cast<DeleteChatRequest>(p_RequestMessage);
+        std::string chatId = deleteChatRequest->chatId;
+
+        bool isGroup = IsGroupChat(chatId);
         {
-          std::shared_ptr<GetGroupMembersRequest> getGroupMembersRequest =
-            std::static_pointer_cast<GetGroupMembersRequest>(p_RequestMessage);
-          SendLine("NAMES " + getGroupMembersRequest->chatId);
+          std::unique_lock<std::mutex> lock(m_ChatsMutex);
+          auto it = m_KnownChats.find(chatId);
+          if (it != m_KnownChats.end())
+          {
+            if (isGroup)
+            {
+              lock.unlock();
+              SendLine("PART " + chatId);
+              lock.lock();
+            }
+            m_KnownChats.erase(it);
+          }
+          m_KnownNicks.erase(chatId);
         }
-        break;
+
+        std::shared_ptr<DeleteChatNotify> deleteChatNotify = std::make_shared<DeleteChatNotify>(m_ProfileId);
+        deleteChatNotify->success = true;
+        deleteChatNotify->chatId = chatId;
+        CallMessageHandler(deleteChatNotify);
+      }
+      break;
 
     default:
       LOG_DEBUG("irc unhandled request type %d", p_RequestMessage->GetMessageType());
