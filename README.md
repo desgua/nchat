@@ -14,7 +14,7 @@ with support for Telegram, WhatsApp and Signal.
 
 Forked from [d99kris](https://github.com/d99kris/nchat)
 ---------------------
-Consider this fork experimental and potentially buggy, made by an amateur, though it is my daily driver.
+Even though I use the app many hours a day and fix bugs as soon as I see them, consider this fork is experimental and potentially buggy, made by an amateur.
 
 Added Features
 --------
@@ -37,6 +37,7 @@ Added Features
 - Display attachment file sizes
 - Display audio and video duration
 - Add a shortcut to trigger reconnection when the connection fails
+- Parse markdown symbols `*bold*` and `_italic_` to actual *bold* and _italic_ in all protocols
 - IRC protocol:  
     after configuring it with `nchat -s`, manually edit `~/.config/nchat_dummy/profiles/IRC_/irc.conf` and add:  
 ```
