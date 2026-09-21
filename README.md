@@ -39,12 +39,12 @@ Added Features
 - Add a shortcut to trigger reconnection when the connection fails
 - Parse markdown symbols `*bold*` and `_italic_` to actual *bold* and _italic_ in all protocols
 - IRC protocol:  
-    after configuring it with `nchat -s`, manually edit `~/.config/nchat_dummy/profiles/IRC_/irc.conf` and add:  
+    after configuring it with `nchat -s`, manually edit `~/.config/nchat/profiles/IRC_/irc.conf` and add:  
 ```
 host=irc.libera.chat
 port=6667
-nick=my_awesome_nick
-user=my_user_login
+nick=my_nick
+user=my_login_nick
 password=my_notsosecure_plain_pass
 realname=First and Last Name
 channel=#dwl
@@ -52,6 +52,16 @@ channel=#test
 channel=#foot
 channel=#mutt
 ```
+  multiple IRC servers are supported. To add another server, manually create another dir and config file, for example `~/.config/nchat/profiles/IRC_OFTC/irc.conf`: 
+```
+host=irc.oftc.net
+port=6667
+nick=my_nick
+user=my_login_nick
+realname=First and Last Name
+channel=#debian-next
+```
+
   to message or query a IRC user, send `/msg user message` or `/query user` in any IRC channel.  
 
 Features
