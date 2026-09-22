@@ -154,7 +154,7 @@ static bool ConfigureSocketKeepAlive(int sock)
   // Set socket receive timeout
   // This ensures a blocking recv() will unblock periodically if the interface drops.
   struct timeval tv;
-  tv.tv_sec = 5;
+  tv.tv_sec = 15;
   tv.tv_usec = 0;
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
 
