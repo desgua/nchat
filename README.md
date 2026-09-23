@@ -37,7 +37,7 @@ Added Features
 - Display attachment file sizes
 - Display audio and video duration
 - Add a shortcut to trigger reconnection when the connection fails
-- Parse markdown symbols `*bold*` and `_italic_` to actual *bold* and _italic_ in all protocols
+- Parse markdown symbols in all protocols `*bold*` and `_italic_` and to actual *bold* and _italic_ and add option to highlight ``` `code` ``` with colors defined at `~/.config/nchat/color.conf`
 - IRC protocol:  
     after configuring it with `nchat -s`, manually edit `~/.config/nchat/profiles/IRC_/irc.conf` and add:  
 ```

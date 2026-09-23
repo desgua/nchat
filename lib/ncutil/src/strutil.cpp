@@ -319,24 +319,73 @@ std::vector<TextRun> StrUtil::ParseMarkdownRuns(const std::wstring& p_Text)
   {
     const wchar_t c = p_Text[i];
 
+    // 1. Code blocks: check for ``` (triple backtick) or ` (single backtick)
+    if (c == L'`')
+    {
+      const bool isTriple = (i + 2 < len && p_Text[i + 1] == L'`' && p_Text[i + 2] == L'`');
+      const std::wstring delim = isTriple ? L"```" : L"`";
+      const size_t delimLen = delim.size();
+
+      const size_t close = p_Text.find(delim, i + delimLen);
+      if (close != std::wstring::npos && close > (i + delimLen))
+      {
+        // Single backticks shouldn't span across lines; triple backticks can
+        const size_t nextNl = p_Text.find(L'\n', i + delimLen);
+        if (!isTriple && (nextNl != std::wstring::npos && close > nextNl))
+        {
+          // Disallow single backtick across lines; fall through to plain text
+        }
+        else
+        {
+          flushPlain();
+          std::wstring content = p_Text.substr(i + delimLen, close - (i + delimLen));
+
+          // For multi-line triple backtick blocks, trim the fence newlines
+          if (isTriple)
+          {
+            if (!content.empty() && content.front() == L'\n')
+            {
+              content.erase(0, 1);
+            }
+            if (!content.empty() && content.back() == L'\n')
+            {
+              content.pop_back();
+            }
+          }
+
+          TextRun run;
+          run.text = content;
+          run.code = true;
+          runs.push_back(run);
+
+          i = close + delimLen;
+          goto next_token;
+        }
+      }
+    }
+
+    // 2. Bold (*) and Italic (_)
     if (c == L'*' || c == L'_')
     {
-      // Check for double delimiter (** or __) vs single delimiter (* or _)
       const bool isDouble = ((i + 1 < len) && (p_Text[i + 1] == c));
       const std::wstring delim(isDouble ? 2 : 1, c);
       const size_t delimLen = delim.size();
 
-      // Left-flanking rule: opener cannot be preceded by a word char or followed by a space
       const bool openBoundaryOk = (i == 0) || !isWordChar(p_Text[i - 1]);
       const bool openSpaceOk = ((i + delimLen) < len) && (p_Text[i + delimLen] != L' ');
 
       if (openBoundaryOk && openSpaceOk)
       {
-        // Find matching closing delimiter
+        const size_t nextNl = p_Text.find(L'\n', i + delimLen);
         size_t close = p_Text.find(delim, i + delimLen);
         while (close != std::wstring::npos)
         {
-          // Right-flanking rule: closer cannot be preceded by space or followed by word char
+          // Bold/italic must not span across newlines
+          if (nextNl != std::wstring::npos && close > nextNl)
+          {
+            break;
+          }
+
           const bool closeSpaceOk = (close > (i + delimLen)) && (p_Text[close - 1] != L' ');
           const bool closeBoundaryOk = ((close + delimLen) >= len) || !isWordChar(p_Text[close + delimLen]);
 
@@ -383,65 +432,93 @@ std::vector<std::vector<TextRun>> StrUtil::WordWrapRuns(const std::vector<TextRu
 
   for (const TextRun& run : p_Runs)
   {
-    std::wstring remaining = run.text;
+    size_t segStart = 0;
+    const size_t textLen = run.text.size();
 
-    while (!remaining.empty())
+    // Process text between newlines
+    while (segStart <= textLen)
     {
-      size_t spacePos = remaining.find(L' ');
-      std::wstring word = (spacePos == std::wstring::npos) ? remaining : remaining.substr(0, spacePos + 1);
-      remaining = (spacePos == std::wstring::npos) ? L"" : remaining.substr(spacePos + 1);
+      size_t nlPos = run.text.find(L'\n', segStart);
+      std::wstring segment = (nlPos == std::wstring::npos)
+          ? run.text.substr(segStart)
+          : run.text.substr(segStart, nlPos - segStart);
 
-      int wordWidth = StrUtil::WStringWidth(word);
+      std::wstring remaining = segment;
 
-      // If word exceeds the entire width on its own, force-break character by character
-      if (wordWidth > p_Width)
+      while (!remaining.empty())
       {
-        for (wchar_t wc : word)
+        size_t spacePos = remaining.find(L' ');
+        std::wstring word = (spacePos == std::wstring::npos) ? remaining : remaining.substr(0, spacePos + 1);
+        remaining = (spacePos == std::wstring::npos) ? L"" : remaining.substr(spacePos + 1);
+
+        int wordWidth = StrUtil::WStringWidth(word);
+
+        if (wordWidth > p_Width)
         {
-          const std::wstring ch(1, wc);
-          const int chWidth = StrUtil::WStringWidth(ch);
-          if (currentLineWidth + chWidth > p_Width && !currentLine.empty())
+          for (wchar_t wc : word)
           {
-            flushLine();
+            const std::wstring ch(1, wc);
+            const int chWidth = StrUtil::WStringWidth(ch);
+            if (currentLineWidth + chWidth > p_Width && !currentLine.empty())
+            {
+              flushLine();
+            }
+            if (!currentLine.empty() &&
+                currentLine.back().bold == run.bold &&
+                currentLine.back().italic == run.italic &&
+                currentLine.back().code == run.code)
+            {
+              currentLine.back().text += ch;
+            }
+            else
+            {
+              TextRun piece;
+              piece.text = ch;
+              piece.bold = run.bold;
+              piece.italic = run.italic;
+              piece.code = run.code;
+              currentLine.push_back(piece);
+            }
+            currentLineWidth += chWidth;
           }
-          if (!currentLine.empty() && currentLine.back().bold == run.bold && currentLine.back().italic == run.italic)
+          continue;
+        }
+
+        if ((currentLineWidth + wordWidth > p_Width) && !currentLine.empty())
+        {
+          flushLine();
+        }
+
+        if (!word.empty())
+        {
+          if (!currentLine.empty() &&
+              currentLine.back().bold == run.bold &&
+              currentLine.back().italic == run.italic &&
+              currentLine.back().code == run.code)
           {
-            currentLine.back().text += ch;
+            currentLine.back().text += word;
           }
           else
           {
             TextRun piece;
-            piece.text = ch;
+            piece.text = word;
             piece.bold = run.bold;
             piece.italic = run.italic;
+            piece.code = run.code;
             currentLine.push_back(piece);
           }
-          currentLineWidth += chWidth;
+          currentLineWidth += wordWidth;
         }
-        continue;
       }
 
-      // If word does not fit on current line, wrap to new line
-      if ((currentLineWidth + wordWidth > p_Width) && !currentLine.empty())
+      if (nlPos != std::wstring::npos)
       {
-        flushLine();
+        flushLine(); // Newline encountered: flush the visual line
+        segStart = nlPos + 1;
       }
-
-      if (!word.empty())
+      else
       {
-        if (!currentLine.empty() && currentLine.back().bold == run.bold && currentLine.back().italic == run.italic)
-        {
-          currentLine.back().text += word;
-        }
-        else
-        {
-          TextRun piece;
-          piece.text = word;
-          piece.bold = run.bold;
-          piece.italic = run.italic;
-          currentLine.push_back(piece);
-        }
-        currentLineWidth += wordWidth;
+        break;
       }
     }
   }
@@ -456,32 +533,13 @@ std::vector<std::vector<TextRun>> StrUtil::WordWrapRuns(const std::vector<TextRu
 
 std::vector<std::vector<TextRun>> StrUtil::WordWrapMarkdown(const std::wstring& p_Text, int p_Width)
 {
-  std::vector<std::vector<TextRun>> allLines;
-
-  // Split by newline '\n' into paragraphs
-  size_t start = 0;
-  while (start <= p_Text.size())
+  if (p_Text.empty())
   {
-    size_t end = p_Text.find(L'\n', start);
-    std::wstring para = (end == std::wstring::npos) ? p_Text.substr(start) : p_Text.substr(start, end - start);
-
-    if (para.empty())
-    {
-      // Blank line
-      allLines.push_back({});
-    }
-    else
-    {
-      std::vector<TextRun> runs = StrUtil::ParseMarkdownRuns(para);
-      std::vector<std::vector<TextRun>> wrapped = StrUtil::WordWrapRuns(runs, p_Width);
-      allLines.insert(allLines.end(), wrapped.begin(), wrapped.end());
-    }
-
-    if (end == std::wstring::npos) break;
-    start = end + 1;
+    return { {} };
   }
 
-  return allLines;
+  std::vector<TextRun> runs = StrUtil::ParseMarkdownRuns(p_Text);
+  return StrUtil::WordWrapRuns(runs, p_Width);
 }
 
 void StrUtil::ReplaceString(std::string& p_Str, const std::string& p_Search, const std::string& p_Replace)

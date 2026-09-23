@@ -89,6 +89,8 @@ void UiColorConfig::Init()
     { "dialog_shaded_color_fg", defaultShadedColor },
     { "default_color_bg", "" },
     { "default_color_fg", "" },
+    { "code_highlight_bg", "" },
+    { "code_highlight_fg", "" },
   };
 
   const std::string configPath(FileUtil::GetApplicationDir() + std::string("/color.conf"));

@@ -18,6 +18,7 @@ struct TextRun
   std::wstring text;
   bool bold = false;
   bool italic = false;
+  bool code = false;
 };
 
 class StrUtil

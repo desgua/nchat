@@ -445,7 +445,20 @@ void UiHistoryView::Draw()
         {
           if (currentX >= m_PaddedW) break;
 
-          int runAttr = attributeText | colorPairText;
+          int colorPair = colorPairText;
+          if (run.code && !isSelectedMessage)
+          {
+            static int colorPairCode = UiColorConfig::GetColorPair("code_highlight");
+            if (colorPairCode != 0)
+            {
+              colorPair = colorPairCode;
+            }
+            else
+            {
+              colorPair = colorPairText;
+            }
+          }
+          int runAttr = attributeText | colorPair;
           if (run.bold) runAttr |= A_BOLD;
 #ifdef A_ITALIC
           if (run.italic) runAttr |= A_ITALIC;
