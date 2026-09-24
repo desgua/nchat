@@ -476,10 +476,19 @@ void UiHistoryView::Draw()
         // Pad the remainder of the line with spaces
         if (currentX < m_PaddedW)
         {
+          int padColorPair = colorPairText;
+          if (!runs.empty() && runs.back().code && !isSelectedMessage)
+          {
+            static int colorPairCode = UiColorConfig::GetColorPair("code_highlight");
+            if (colorPairCode != 0)
+            {
+              padColorPair = colorPairCode;
+            }
+          }
           const std::wstring wpad(m_PaddedW - currentX, L' ');
-          wattron(m_PaddedWin, attributeText | colorPairText);
+          wattron(m_PaddedWin, attributeText | padColorPair);
           waddnwstr(m_PaddedWin, wpad.c_str(), (int)wpad.size());
-          wattroff(m_PaddedWin, attributeText | colorPairText);
+          wattroff(m_PaddedWin, attributeText | padColorPair);
         }
       }
 
