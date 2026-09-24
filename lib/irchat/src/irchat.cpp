@@ -626,6 +626,13 @@ void IrChat::HandleLine(const std::string& p_Line)
 
   LOG_DEBUG("irc recv: %s", p_Line.c_str());
 
+  if (p_Line.find(":\x01VERSION\x01") != std::string::npos)
+  {
+    SendLine("NOTICE :\x01VERSION nchat (IRC)\x01");
+    LOG_DEBUG("irc answered CTCP VERSION");
+    return;
+  }
+
   if (msg.command == "PING")
   {
     std::string token = msg.params.empty() ? "" : msg.params[0];
@@ -649,14 +656,6 @@ void IrChat::HandleLine(const std::string& p_Line)
       std::string targetAccount = m_User.empty() ? m_Nick : m_User;
       SendLine("PRIVMSG NickServ :IDENTIFY " + targetAccount + " " + m_Password);
       LOG_DEBUG("irc sent identify command for account %s", targetAccount.c_str());
-      // DoAutoJoin() is now triggered by "900" below, with a fallback timer
-      // as a safety net for networks that don't send RPL_LOGGEDIN (900).
-//      std::thread([this]()
-//      {
-//        std::this_thread::sleep_for(std::chrono::seconds(10));
-//        LOG_DEBUG("irc request to join using fallback sleep timer %s");
-//        DoAutoJoin();
-//      }).detach();
     }
     else
     {
