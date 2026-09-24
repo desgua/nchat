@@ -1291,6 +1291,55 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
       }
       break;
 
+    case CreateChatRequestType:
+      {
+        std::shared_ptr<CreateChatRequest> createChatRequest =
+          std::static_pointer_cast<CreateChatRequest>(p_RequestMessage);
+
+        std::string target = createChatRequest->userId;
+
+        // Clean up target name (strip whitespace or mode prefixes if any)
+        while (!target.empty() && (target.front() == ' ' || target.front() == '@' || target.front() == '+'))
+        {
+          target.erase(0, 1);
+        }
+        while (!target.empty() && target.back() == ' ')
+        {
+          target.pop_back();
+        }
+
+        if (target.empty())
+        {
+          LOG_WARNING("irc create chat called with empty target");
+          std::shared_ptr<CreateChatNotify> notify = std::make_shared<CreateChatNotify>(m_ProfileId);
+          notify->success = false;
+          CallMessageHandler(notify);
+          break;
+        }
+
+        // Check if target is an IRC channel (#channel, &channel, etc.)
+        bool isChannel = (!target.empty() && (target[0] == '#' || target[0] == '&' || target[0] == '+' || target[0] == '!'));
+
+        if (isChannel)
+        {
+          // Join the channel on the IRC network
+          SendLine("JOIN " + target);
+        }
+
+        // Register the chat & contact within irchat state and notify the UI
+        EnsureChat(target, isChannel);
+        EnsureContact(target, target);
+
+        // Notify nchat UiModel that the chat creation succeeded
+        std::shared_ptr<CreateChatNotify> notify = std::make_shared<CreateChatNotify>(m_ProfileId);
+        notify->success = true;
+        notify->chatInfo.id = target;
+        CallMessageHandler(notify);
+
+        LOG_DEBUG("irc created chat for target: %s (isGroup=%d)", target.c_str(), isChannel);
+      }
+      break;
+
     default:
       LOG_DEBUG("irc unhandled request type %d", p_RequestMessage->GetMessageType());
       break;
