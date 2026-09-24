@@ -1827,7 +1827,7 @@ void TgChat::Impl::InitConfig()
   {
     { "profile_display_name", "" },
     { "local_key", "" },
-    { "markdown_enabled", "1" },
+    { "markdown_enabled", "0" },
     { "markdown_version", "1" },
   };
   const std::string configPath(m_ProfileDir + std::string("/telegram.conf"));
