@@ -130,6 +130,7 @@ private:
   // irc info
   void PostSystemMessage(const std::string& p_Text);
   int m_SysMsgCounter = 0;
+  std::string m_ProfileDisplayName;
 };
 
 extern "C" IrChat* CreateIrChat();

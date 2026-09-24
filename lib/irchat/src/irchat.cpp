@@ -53,8 +53,7 @@ std::string IrChat::GetProfileId() const
 
 std::string IrChat::GetProfileDisplayName() const
 {
-  static std::string profileDisplayName = "";
-  return profileDisplayName;
+  return m_ProfileDisplayName;
 }
 
 bool IrChat::HasFeature(ProtocolFeature p_ProtocolFeature) const
@@ -418,6 +417,7 @@ void IrChat::InitConfig()
     else if (key == "password") m_Password = val;
     else if (key == "realname") m_RealName = val;
     else if (key == "channel") m_AutoJoinChannels.push_back(val);
+    else if (key == "profile_display_name") m_ProfileDisplayName = val;
   }
 }
 
