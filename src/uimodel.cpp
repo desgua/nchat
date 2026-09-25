@@ -1424,14 +1424,32 @@ void UiModel::OnKeyNewContact()
   if (textInputDialog.Run())
   {
     std::string phoneNumber = textInputDialog.GetInput();
+
+    // Find the WhatsApp protocol and its profileId regardless of current chat selection
     std::string profileId;
+    std::shared_ptr<Protocol> waProtocol;
     {
       std::unique_lock<owned_mutex> lock(m_ModelMutex);
-      profileId = GetImpl().GetCurrentChat().first;
+      std::unordered_map<std::string, std::shared_ptr<Protocol>> protocols = GetImpl().GetProtocols();
+      for (const auto& it : protocols)
+      {
+        const std::string& pId = it.first;
+        const std::shared_ptr<Protocol>& protocol = it.second;
+
+        if (protocol && (StrUtil::GetProtocolName(pId) == "WhatsAppMd"))
+        {
+          profileId = pId;
+          waProtocol = protocol;
+          break;
+        }
+      }
     }
-    if (profileId.empty())
+
+    if (profileId.empty() || !waProtocol)
     {
-      MessageDialog("Warning", "No active chat/profile to create a new chat in.", 0.7, 5);
+      MessageDialog("Warning", "WhatsApp profile is not available/configured.", 0.7, 5);
+      std::unique_lock<owned_mutex> lock(m_ModelMutex);
+      GetImpl().ReinitView();
       return;
     }
 
@@ -1476,12 +1494,7 @@ void UiModel::OnKeyNewContact()
     // 3. Otherwise, resolve/validate against WhatsApp directly.
     if (userId.empty())
     {
-      std::unordered_map<std::string, std::shared_ptr<Protocol>> protocols = GetProtocols();
-      auto protocolIt = protocols.find(profileId);
-      if (protocolIt != protocols.end() && protocolIt->second)
-      {
-        userId = protocolIt->second->CheckPhoneNumber(phoneNumber);
-      }
+      userId = waProtocol->CheckPhoneNumber(phoneNumber);
     }
 
     if (userId.empty())
