@@ -31,6 +31,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/time.h>
+#include <atomic>
 
 extern "C" IrChat* CreateIrChat()
 {
@@ -340,13 +341,14 @@ static std::string IrcToMarkdown(const std::string& text)
 void IrChat::PostSystemMessage(const std::string& p_Text)
 {
   static const std::string sysChatId = "irc info";
+  static std::atomic<uint64_t> s_MsgCounter{0};
 
   EnsureChat(sysChatId, false);
   EnsureContact(sysChatId, "irc info");
 
   ChatMessage chatMessage;
   chatMessage.id = sysChatId + "_" + std::to_string(time(nullptr)) + "_" +
-                    std::to_string(m_SysMsgCounter++);
+                  std::to_string(s_MsgCounter.fetch_add(1));
   chatMessage.senderId = sysChatId;
   chatMessage.text = IrcToMarkdown(p_Text);
   chatMessage.timeSent = static_cast<int64_t>(time(nullptr)) * 1000;
@@ -698,11 +700,11 @@ void IrChat::HandleLine(const std::string& p_Line)
       EnsureChat(channel, true);
       EnsureContact(channel, channel);
     }
-    else
-    {
+    //else
+    //{
       // TODO: track per-channel membership, push NewGroupMembersNotify.
-      EnsureContact(nick, nick);
-    }
+      //EnsureContact(nick, nick);
+    //}
     return;
   }
 
@@ -713,6 +715,7 @@ void IrChat::HandleLine(const std::string& p_Line)
     std::string target = msg.params[0];
     std::string text = IrcToMarkdown(msg.params[1]);
     std::string nick = PrefixToNick(msg.prefix);
+    static std::atomic<uint64_t> s_MsgCounter{0};
 
     bool isGroup = IsGroupChat(target);
     std::string chatId = isGroup ? target : nick;
@@ -721,7 +724,8 @@ void IrChat::HandleLine(const std::string& p_Line)
     EnsureContact(nick, nick);
 
     ChatMessage chatMessage;
-    chatMessage.id = chatId + "_" + std::to_string(time(nullptr)) + "_" + nick;
+    chatMessage.id = chatId + "_" + std::to_string(time(nullptr)) + "_" +
+                  std::to_string(s_MsgCounter.fetch_add(1)) + "_" + nick;
     chatMessage.senderId = nick;
     chatMessage.text = text;
     chatMessage.timeSent = static_cast<int64_t>(time(nullptr)) * 1000;
@@ -1163,7 +1167,28 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
 
         // Send over IRC socket
         std::string ircPayload = MarkdownToIrc(textToSend);
-        bool ok = SendLine("PRIVMSG " + targetChatId + " :" + ircPayload);
+        bool ok = true;
+        std::istringstream ircStream(ircPayload);
+        std::string ircLine;
+        bool sentAny = false;
+        while (std::getline(ircStream, ircLine))
+        {
+          if (!ircLine.empty() && (ircLine.back() == '\r'))
+          {
+            ircLine.pop_back();
+          }
+
+          if (ircLine.empty()) continue; // skip blank lines; most IRC servers reject empty PRIVMSG text
+
+          ok = SendLine("PRIVMSG " + targetChatId + " :" + ircLine) && ok;
+          sentAny = true;
+        }
+
+        if (!sentAny)
+        {
+          // textToSend was empty or all-whitespace/newlines after MarkdownToIrc — nothing valid to send
+          ok = false;
+        }
 
         // 1. Notify the original chat request -> clears the active input box
         std::shared_ptr<SendMessageNotify> sendMessageNotify = std::make_shared<SendMessageNotify>(m_ProfileId);
@@ -1201,20 +1226,20 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
       }
       break;
 
-    case SetStatusRequestType:
-      {
-        std::shared_ptr<SetStatusRequest> setStatusRequest =
-          std::static_pointer_cast<SetStatusRequest>(p_RequestMessage);
-
-        // Rough mapping of online/offline onto IRC's AWAY mechanism.
-        bool ok = setStatusRequest->isOnline ? SendLine("AWAY") : SendLine("AWAY :away");
-
-        std::shared_ptr<SetStatusNotify> setStatusNotify = std::make_shared<SetStatusNotify>(m_ProfileId);
-        setStatusNotify->success = ok;
-        setStatusNotify->isOnline = setStatusRequest->isOnline;
-        CallMessageHandler(setStatusNotify);
-      }
-      break;
+//    case SetStatusRequestType:
+//      {
+//        std::shared_ptr<SetStatusRequest> setStatusRequest =
+//          std::static_pointer_cast<SetStatusRequest>(p_RequestMessage);
+//
+//        // Rough mapping of online/offline onto IRC's AWAY mechanism.
+//        bool ok = setStatusRequest->isOnline ? SendLine("AWAY") : SendLine("AWAY :away");
+//
+//        std::shared_ptr<SetStatusNotify> setStatusNotify = std::make_shared<SetStatusNotify>(m_ProfileId);
+//        setStatusNotify->success = ok;
+//        setStatusNotify->isOnline = setStatusRequest->isOnline;
+//        CallMessageHandler(setStatusNotify);
+//      }
+//      break;
 
     case DeferNotifyRequestType:
       {
