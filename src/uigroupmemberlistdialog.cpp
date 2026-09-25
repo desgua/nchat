@@ -60,6 +60,13 @@ bool UiGroupMemberListDialog::OnTimer()
   return false;
 }
 
+static bool ContactIdMayEqualName(UiModel* p_Model, const std::string& p_ProfileId)
+{
+  auto protocols = p_Model->GetProtocols();
+  auto it = protocols.find(p_ProfileId);
+  return (it != protocols.end()) && it->second->HasFeature(FeatureContactIdMayEqualName);
+}
+
 void UiGroupMemberListDialog::UpdateList()
 {
   int64_t modelUpdateTime = m_Model->GetGroupMembersUpdateTime();
@@ -91,7 +98,7 @@ void UiGroupMemberListDialog::UpdateList()
     const std::string& name = m_Model->GetContactListName(m_ProfileId, memberId, false /*p_AllowId*/,
                                                           true /*p_AllowAlias*/);
     if (name.empty()) continue;
-    if (name == memberId) continue;
+    if ((name == memberId) && !ContactIdMayEqualName(m_Model, m_ProfileId)) continue;
     if (m_Model->IsContactSelf(m_ProfileId, memberId)) continue;
 
     std::string displayName = name;

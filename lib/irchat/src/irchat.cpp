@@ -64,7 +64,7 @@ bool IrChat::HasFeature(ProtocolFeature p_ProtocolFeature) const
   // nothing to auto-push — we need the UI to actively call
   // GetChatsRequestType so our MessageCache::FetchChats + in-memory
   // m_KnownChats logic actually runs.
-  static int customFeatures = FeatureNone;
+  static int customFeatures = FeatureContactIdMayEqualName;
   return (p_ProtocolFeature & customFeatures);
 }
 
@@ -777,15 +777,7 @@ void IrChat::HandleLine(const std::string& p_Line)
       for (const std::string& nick : it->second)
       {
         ContactInfo contactInfo;
-        // Prefixed so id != name — the shared group-member dialog
-        // (uigroupmemberlistdialog.cpp) filters out entries where
-        // name == memberId, assuming that means "unresolved contact"
-        // (true for WhatsApp/Signal's phone-number/UUID ids, but IRC's
-        // id IS the nick by design). This id is scoped to this feature
-        // only — never used as a JOIN/PRIVMSG target or matched against
-        // chatId/senderId anywhere, so it's safe to differ from the
-        // nick used elsewhere for messaging and sender-name display.
-        contactInfo.id = "member:" + nick;
+        contactInfo.id = nick;
         contactInfo.name = nick;
         newGroupMembersNotify->contactInfos.push_back(contactInfo);
       }
