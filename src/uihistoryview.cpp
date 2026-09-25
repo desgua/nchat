@@ -384,6 +384,13 @@ void UiHistoryView::Draw()
     const int maxMessageLines = (m_PaddedH - 1);
     if (firstMessage && ((int)wlines.size() > maxMessageLines))
     {
+      if (wlines.size() == wlineRuns.size())
+      {
+        wlineRuns.resize(maxMessageLines - 1);
+        TextRun ellipsisRun;
+        ellipsisRun.text = L"[...]";
+        wlineRuns.push_back({ ellipsisRun });
+      }
       wlines.resize(maxMessageLines - 1);
       wlines.push_back(L"[...]");
       reactionLines = 0;
