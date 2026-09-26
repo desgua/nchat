@@ -1656,22 +1656,25 @@ void UiModel::Impl::OnKeyOpen()
 {
   AnyUserKeyInput();
   if (!GetSelectMessageActive() || GetEditMessageActive()) return;
-
   std::string filePath;
   if (GetMessageAttachmentPath(filePath, DownloadFileActionOpen))
   {
     OnKeyOpenAttachment(filePath);
     return;
   }
-
   std::string linkChatId;
   std::vector<std::string> msgUrls;
   if (GetMessageLinks(linkChatId, msgUrls))
   {
+    if (msgUrls.size() != 1)
+    {
+      LOG_DEBUG("message has %zu links, opening as text instead", msgUrls.size());
+      OnKeyOpenMsg();
+      return;
+    }
     OnKeyOpenLink();
     return;
   }
-
   OnKeyOpenMsg();
 }
 
