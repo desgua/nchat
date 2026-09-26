@@ -834,6 +834,48 @@ void IrChat::HandleLine(const std::string& p_Line)
     return;
   }
 
+  size_t m_PendingChannelListTotal = 0;
+  static const size_t kMaxListEntries = 200;
+  if (msg.command == "322") // RPL_LIST
+  {
+    if (msg.params.size() < 3) return;
+
+    m_PendingChannelListTotal++;
+    if (m_PendingChannelList.size() >= kMaxListEntries) return; // drop the rest, don't grow further
+
+    std::string channel = msg.params[1];
+    std::string userCount = msg.params[2];
+    std::string topic = (msg.params.size() > 3) ? msg.params[3] : "";
+    m_PendingChannelList.push_back(channel + " (" + userCount + ")" +
+                                    (topic.empty() ? "" : " - " + topic));
+    return;
+  }
+
+  if (msg.command == "323") // RPL_LISTEND
+  {
+    std::string summary = "Channel list (" + std::to_string(m_PendingChannelList.size());
+    if (m_PendingChannelListTotal > m_PendingChannelList.size())
+    {
+      summary += " of " + std::to_string(m_PendingChannelListTotal) + ", truncated";
+    }
+    summary += "):\n";
+    for (const std::string& line : m_PendingChannelList)
+    {
+      summary += line + "\n";
+    }
+    PostSystemMessage(summary);
+    m_PendingChannelList.clear();
+    m_PendingChannelListTotal = 0;
+    return;
+  }
+
+  if (msg.command == "263") // RPL_TRYAGAIN
+  {
+    if (msg.params.size() < 3) return;
+    PostSystemMessage(msg.params[1] + " command rejected: " + msg.params[2]);
+    return;
+  }
+
   if ((msg.command == "473") || (msg.command == "474") || (msg.command == "475") ||
       (msg.command == "477") || (msg.command == "471") || (msg.command == "403"))
   {
@@ -1111,6 +1153,89 @@ void IrChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
         std::string targetChatId = sendMessageRequest->chatId;
         std::string textToSend = sendMessageRequest->chatMessage.text;
         bool isSlashMsgOrQuery = false;
+
+        // Check for /list <pattern>  (pattern is required — an unfiltered /list
+        // on a large network can return thousands of entries and pins the CPU
+        // formatting/rendering them)
+        if (textToSend.rfind("/list", 0) == 0 &&
+            (textToSend.size() == 5 || textToSend[5] == ' '))
+        {
+          std::string pattern;
+          if (textToSend.size() > 5)
+          {
+            size_t start = textToSend.find_first_not_of(' ', 5);
+            if (start != std::string::npos)
+            {
+              pattern = textToSend.substr(start);
+            }
+          }
+
+          if (pattern.empty())
+          {
+            PostSystemMessage("/list requires a search term, e.g. \"/list lib\" — "
+                               "listing every channel on a large network can be extremely slow.");
+
+            std::shared_ptr<SendMessageNotify> notify = std::make_shared<SendMessageNotify>(m_ProfileId);
+            notify->success = true; // still clear the input box
+            notify->chatId = sendMessageRequest->chatId;
+            notify->chatMessage = sendMessageRequest->chatMessage;
+            CallMessageHandler(notify);
+            break;
+          }
+
+          std::string mask = "*" + pattern + "*";
+          bool ok = SendLine("LIST " + mask);
+          LOG_DEBUG("irc /list request sent (pattern=\"%s\")", pattern.c_str());
+
+          std::shared_ptr<SendMessageNotify> notify = std::make_shared<SendMessageNotify>(m_ProfileId);
+          notify->success = ok;
+          notify->chatId = sendMessageRequest->chatId;
+          notify->chatMessage = sendMessageRequest->chatMessage;
+          CallMessageHandler(notify);
+          break;
+        }
+
+        // Check for /join <channel> [key]
+        if (textToSend.rfind("/join", 0) == 0 &&
+            (textToSend.size() == 5 || textToSend[5] == ' '))
+        {
+          std::string rest;
+          if (textToSend.size() > 5)
+          {
+            size_t start = textToSend.find_first_not_of(' ', 5);
+            if (start != std::string::npos)
+            {
+              rest = textToSend.substr(start);
+            }
+          }
+
+          // rest is "#channel" or "#channel key"
+          size_t sep = rest.find(' ');
+          std::string channel = (sep == std::string::npos) ? rest : rest.substr(0, sep);
+          std::string key = (sep == std::string::npos) ? "" : rest.substr(sep + 1);
+
+          bool ok = false;
+          if (!channel.empty())
+          {
+            ok = SendLine(key.empty() ? "JOIN " + channel : "JOIN " + channel + " " + key);
+            LOG_DEBUG("irc /join request sent (channel=\"%s\")", channel.c_str());
+          }
+          else
+          {
+            LOG_DEBUG("irc /join missing channel argument");
+          }
+
+          // Acknowledge against the ORIGINAL chat so the input box clears. Don't
+          // push a NewMessagesNotify or call EnsureChat here — the server's JOIN
+          // echo (handled in HandleLine, nick == m_Nick case) already does that
+          // once the join is actually confirmed.
+          std::shared_ptr<SendMessageNotify> notify = std::make_shared<SendMessageNotify>(m_ProfileId);
+          notify->success = ok;
+          notify->chatId = sendMessageRequest->chatId;
+          notify->chatMessage = sendMessageRequest->chatMessage;
+          CallMessageHandler(notify);
+          break;
+        }
 
         // Check for /msg <nick> [text] or /query <nick> [text]
         if (textToSend.rfind("/msg ", 0) == 0 || textToSend.rfind("/query ", 0) == 0)

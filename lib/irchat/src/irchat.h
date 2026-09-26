@@ -131,6 +131,7 @@ private:
   void PostSystemMessage(const std::string& p_Text);
   int m_SysMsgCounter = 0;
   std::string m_ProfileDisplayName;
+  std::vector<std::string> m_PendingChannelList;
 };
 
 extern "C" IrChat* CreateIrChat();
