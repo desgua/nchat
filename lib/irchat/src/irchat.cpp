@@ -17,6 +17,7 @@
 #include "log.h"
 #include "status.h"
 #include "messagecache.h"
+#include "strutil.h"
 
 #include <cstring>
 #include <netdb.h>
@@ -340,11 +341,20 @@ static std::string IrcToMarkdown(const std::string& text)
 
 void IrChat::PostSystemMessage(const std::string& p_Text)
 {
-  static const std::string sysChatId = "irc info";
+  std::string sysChatId = m_ProfileDisplayName;
+  if (sysChatId.empty())
+  {
+    sysChatId = StrUtil::GetProtocolServerName(m_ProfileId);
+  }
+  if (sysChatId.empty())
+  {
+    sysChatId = "irc info";
+  }
+
   static std::atomic<uint64_t> s_MsgCounter{0};
 
   EnsureChat(sysChatId, false);
-  EnsureContact(sysChatId, "irc info");
+  EnsureContact(sysChatId, sysChatId);
 
   ChatMessage chatMessage;
   chatMessage.id = sysChatId + "_" + std::to_string(time(nullptr)) + "_" +

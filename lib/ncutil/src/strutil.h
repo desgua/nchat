@@ -34,6 +34,7 @@ public:
   static std::string GetPass();
   static std::string GetPhoneNumber();
   static std::string GetProtocolName(const std::string& p_ProfileId);
+  static std::string GetProtocolServerName(const std::string& p_ProfileId);
   static bool GetQuotePrefix(const std::wstring& p_String, std::wstring& p_Prefix, std::wstring& p_Line);
   static bool IsInteger(const std::string& p_Str);
   static bool IsValidTextKey(int p_Key);
