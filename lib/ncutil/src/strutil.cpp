@@ -1013,10 +1013,7 @@ std::vector<std::wstring> StrUtil::WordWrap(std::wstring p_Text, unsigned p_Line
       }
       else
       {
-        // partial fix for cursor position of some emojis
-        const size_t charOffset = std::min((size_t)p_Pos, line.size());
-        const std::wstring prefix = line.substr(0, charOffset);
-        p_WrapPos = StrUtil::WStringWidth(prefix); // column width of everything before the cursor on this line
+        p_WrapPos = p_Pos;
         p_Pos = 0;
       }
     }
