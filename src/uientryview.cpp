@@ -62,7 +62,21 @@ void UiEntryView::Draw()
 
   wattroff(m_Win, attribute | colorPair);
 
-  m_CursX = cx;
+  // partially fix pasting some emojis by desgua
+  if (cy < (int)lines.size())
+  {
+    const std::wstring& currentLine = lines.at(cy);
+    const size_t charOffset = std::min((size_t)std::max(0, cx), currentLine.size());
+    std::wstring prefix = currentLine.substr(0, charOffset);
+    prefix.erase(std::remove(prefix.begin(), prefix.end(), EMOJI_PAD), prefix.end());
+    m_CursX = StrUtil::WStringWidth(prefix);
+  }
+  else
+  {
+    m_CursX = cx;
+  }
+  // end of the fix by desgua
+
   m_CursY = (cy - yoffs);
 
   wmove(m_Win, m_CursY, m_CursX);
