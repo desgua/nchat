@@ -28,9 +28,9 @@ Added Features
 - Moved status information from the bottom bar to the top bar
 - Search across all chats (instead of restricting search to the current chat)
 - Search in reverse order
-- Parse location and poll information [WhatsApp]
 - Retain draft text until successfully sent (prevents losing input if connection drops)
 - Message contacts not in the contact list [WhatsApp]
+- Parse location and poll information [WhatsApp]
 - Omit contact names before individual messages unless in a group chat
 - Fetch profile photo (*if* a shortcut `vim_navigation_profile_photo` (or `open_profile_photo`) is defined and `image_open_command` is also defined), and open it or pass "no_photo_available" if the contact doesn't have a photo
 - Display unread message count
@@ -63,6 +63,8 @@ channel=#debian-next
 ```
 
   to message or query a IRC user, send `/msg user message` or `/query user` in any IRC channel.  
+  to search for channels: `/list my_search`  
+  to temporary join a channel (to make the join permanent, manually add to irc.conf file): `/join awesowe_channel`  
 
 Features
 --------
