@@ -41,6 +41,7 @@ Added Features
 - IRC protocol:  
     after configuring it with `nchat -s`, manually edit `~/.config/nchat/profiles/IRC_/irc.conf` and add:  
 ```
+profile_display_name=[Libera]
 host=irc.libera.chat
 port=6667
 nick=my_nick
@@ -54,6 +55,7 @@ channel=#mutt
 ```
   multiple IRC servers are supported. To add another server, manually create another dir and config file, for example `~/.config/nchat/profiles/IRC_OFTC/irc.conf`: 
 ```
+profile_display_name=[OFTC]
 host=irc.oftc.net
 port=6667
 nick=my_nick
