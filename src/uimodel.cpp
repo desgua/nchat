@@ -471,11 +471,23 @@ void UiModel::Impl::EntryKeyHandler(wint_t p_Key)
     if (entryPos > 0)
     {
       bool wasPad = (entryStr.at(entryPos - 1) == (wchar_t)EMOJI_PAD);
+      // Also handle Variation Selector-16 (0xFE0F) if present
+      if (!wasPad && entryStr.at(entryPos - 1) == 0xFE0F && entryPos > 1)
+      {
+        EntryConvertEmojiEnabled();
+        entryStr.erase(--entryPos, 1);
+        if (entryPos > 0 && entryStr.at(entryPos - 1) == (wchar_t)EMOJI_PAD)
+        {
+          EntryConvertEmojiEnabled();
+          entryStr.erase(--entryPos, 1);
+        }
+      }
       entryStr.erase(--entryPos, 1);
       if (wasPad)
       {
         entryStr.erase(--entryPos, 1);
       }
+      ReinitView();
       SetTyping(profileId, chatId, true);
     }
   }
