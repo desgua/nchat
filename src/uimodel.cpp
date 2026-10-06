@@ -474,11 +474,9 @@ void UiModel::Impl::EntryKeyHandler(wint_t p_Key)
       // Also handle Variation Selector-16 (0xFE0F) if present
       if (!wasPad && entryStr.at(entryPos - 1) == 0xFE0F && entryPos > 1)
       {
-        EntryConvertEmojiEnabled();
         entryStr.erase(--entryPos, 1);
         if (entryPos > 0 && entryStr.at(entryPos - 1) == (wchar_t)EMOJI_PAD)
         {
-          EntryConvertEmojiEnabled();
           entryStr.erase(--entryPos, 1);
         }
       }
