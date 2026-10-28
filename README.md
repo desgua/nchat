@@ -31,6 +31,7 @@ Added Features
 - Retain draft text until successfully sent (prevents losing input if connection drops)
 - Message contacts not in the contact list [WhatsApp]
 - Parse location and poll information [WhatsApp]
+- Show the name of the newsletter channel [WhatsApp]
 - Omit contact names before individual messages unless in a group chat
 - Fetch profile photo (*if* a shortcut `vim_navigation_profile_photo` (or `open_profile_photo`) is defined and `image_open_command` is also defined), and open it or pass "no_photo_available" if the contact doesn't have a photo
 - Display unread message count
