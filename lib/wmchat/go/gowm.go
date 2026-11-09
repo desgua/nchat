@@ -155,6 +155,10 @@ func GetExpirationsStorePath(connPath string) string {
 	return connPath + "/expirations.dat"
 }
 
+func GetNewsletterServerIDsStorePath(connPath string) string {
+	return connPath + "/newsletter_server_ids.dat"
+}
+
 func AddConn(conn *whatsmeow.Client, path string, sendType int) int {
 	mx.Lock()
 	var connId int = nextConnId
@@ -172,6 +176,10 @@ func AddConn(conn *whatsmeow.Client, path string, sendType int) int {
 	namesSynced[connId] = false
 	newsletterServerIDs[connId] = make(map[string]types.MessageServerID)
 	newsletterLatestServerID[connId] = make(map[string]types.MessageServerID)
+	newsletterServerIDs[connId], _ = LoadMap[types.MessageServerID](GetNewsletterServerIDsStorePath(path))
+	if newsletterServerIDs[connId] == nil {
+		newsletterServerIDs[connId] = make(map[string]types.MessageServerID)
+	}
 	mx.Unlock()
 	return connId
 }
@@ -181,6 +189,7 @@ func RemoveConn(connId int) {
 	SaveMap(GetContactsStorePath(paths[connId]), contacts[connId])
 	SaveMap(GetSendersStorePath(paths[connId]), senders[connId])
 	SaveMap(GetExpirationsStorePath(paths[connId]), expirations[connId])
+	SaveMap(GetNewsletterServerIDsStorePath(paths[connId]), newsletterServerIDs[connId])
 	delete(clients, connId)
 	delete(paths, connId)
 	delete(contacts, connId)
@@ -1986,7 +1995,10 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 		if messageInfo.ServerID > newsletterLatestServerID[connId][chatId] {
 			newsletterLatestServerID[connId][chatId] = messageInfo.ServerID
 		}
+		path := paths[connId]
 		mx.Unlock()
+
+		_ = SaveMap(GetNewsletterServerIDsStorePath(path), newsletterServerIDs[connId])
 	}
 	switch {
 	case msg.Conversation != nil || msg.ExtendedTextMessage != nil:
@@ -4272,10 +4284,73 @@ func WmSendReaction(connId int, chatId string, senderId string, msgId string, em
 	}
 
 	// send reaction
-	chatJid, _ := types.ParseJID(chatId)
-	senderJid, _ := types.ParseJID(senderId)
-	_, sendErr :=
-		client.SendMessage(context.Background(), chatJid, client.BuildReaction(chatJid, senderJid, msgId, emoji))
+	chatJid, err := types.ParseJID(chatId)
+	if err != nil {
+		LOG_WARNING(fmt.Sprintf("invalid chat jid %s: %v", chatId, err))
+		return -1
+	}
+
+	var sendErr error
+	if chatJid.Server == types.NewsletterServer {
+		var serverID types.MessageServerID
+		mx.Lock()
+		if m, ok := newsletterServerIDs[connId]; ok {
+			serverID = m[msgId]
+		}
+		if serverID == 0 {
+			if m, ok := newsletterLatestServerID[connId]; ok {
+				serverID = m[chatId]
+			}
+		}
+		mx.Unlock()
+
+		if serverID == 0 {
+			if num, parseErr := strconv.Atoi(msgId); parseErr == nil && num > 0 {
+				serverID = types.MessageServerID(num)
+			}
+		}
+
+		// Fallback: If not in memory (e.g. historical message from before session start),
+		// fetch recent messages for this newsletter from WhatsApp servers.
+		if serverID == 0 {
+			ctx := context.TODO()
+			msgs, fetchErr := client.GetNewsletterMessages(ctx, chatJid, &whatsmeow.GetNewsletterMessagesParams{Count: 50})
+			if fetchErr != nil {
+				LOG_WARNING(fmt.Sprintf("failed to fetch newsletter messages for %s: %v", chatId, fetchErr))
+			} else if len(msgs) > 0 {
+				var latestID types.MessageServerID
+				for _, m := range msgs {
+					if m.MessageServerID > latestID {
+						latestID = m.MessageServerID
+					}
+				}
+				serverID = latestID
+				if serverID > 0 {
+					mx.Lock()
+					if newsletterServerIDs[connId] == nil {
+						newsletterServerIDs[connId] = make(map[string]types.MessageServerID)
+					}
+					newsletterServerIDs[connId][msgId] = serverID
+					path := paths[connId]
+					mx.Unlock()
+					_ = SaveMap(GetNewsletterServerIDsStorePath(path), newsletterServerIDs[connId])
+					LOG_INFO(fmt.Sprintf("resolved newsletter message %s to server ID %d from WhatsApp", msgId, serverID))
+				}
+			}
+		}
+
+		if serverID == 0 {
+			LOG_WARNING(fmt.Sprintf("cannot send reaction: unknown server ID for newsletter message %s", msgId))
+			return -1
+		}
+
+		ctx := context.TODO()
+		sendErr = client.NewsletterSendReaction(ctx, chatJid, serverID, emoji, "")
+	} else {
+		senderJid, _ := types.ParseJID(senderId)
+		_, sendErr =
+			client.SendMessage(context.Background(), chatJid, client.BuildReaction(chatJid, senderJid, msgId, emoji))
+	}
 
 	if sendErr != nil {
 		LOG_WARNING(fmt.Sprintf("send reaction error %#v", sendErr))
