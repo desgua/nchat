@@ -1,23 +1,22 @@
 #!/usr/bin/dash
 
 cache="/tmp/nchat_display_cache"
-pidfile="/tmp/nchat_display.pid"
-# Check if PID file exists and a process is running with the stored PID
-if [ -f "$pidfile" ]; then
-	pid="$(cat "$pidfile")"
-	if $(kill -0 "$pid" >/dev/null 2>&1) ; then
-		#echo "Another instance of nchat_display is already running. Exiting..."
-		exit 0
-	fi
-fi
+#pidfile="/tmp/nchat_display.pid"
+load="/tmp/nchat_display_load"
+
+## Check if PID file exists and a process is running with the stored PID
+#if [ -f "$pidfile" ]; then
+#	pid="$(cat "$pidfile")"
+#	if $(kill -0 "$pid" >/dev/null 2>&1) ; then
+#		#echo "Another instance of nchat_display is already running. Exiting..."
+#		exit 0
+#	fi
+#fi
+#echo "$$" > "$pidfile"
 
 CLOSE () {
-	prev_pid="$(ps -ef | grep 'img_whats_view' | grep -v 'grep' | awk '{ print $2 }')"
-	if [ "$prev_pid" ]; then 
-		for pid in $prev_pid ; do
-			kill -15 "$pid"
-		done
-	fi
+	pkill -f 'img_whats_view'
+	printf 'no' > "$load"
 	exit 0
 }
 
@@ -34,11 +33,16 @@ case "$pipe" in
 
 	file:*)
 		file="$(printf '%s' "$pipe" | sed 's/^file://')"
+		# if the file was deleted from cache, just exit
+		if [ ! -f "$file" ]; then
+			CLOSE;
+		fi
 		;;
 
 	text:*)
 		text="$(printf '%s' "$pipe" | sed 's/^text://')"
 		;;
+
 	*)
 		notify 'pipe not formated'
 		exit 1
@@ -49,118 +53,131 @@ if [ "$text" ]; then
 
 	case "$url" in
 
-		'')
+		''|*instagram*)
 			CLOSE;
-			;;
+		;;
 
 		*prescricao.cfm*)
 			file="$cache/$(printf '%s' "$url" | sed 's|/|_|g ; s/$/.pdf/')"
 			if [ ! -f "$file" ]; then
 				wget -q "$url" -O "$file"
 			fi
-			;;
+			if [ ! -s "$file" ]; then
+				notify 'Failed to get prescription!'
+				exit 1
+			fi
+		;;
 
-		*youtube*)
+		*youtube*|*youtu.be*)
 			file="$cache/$(printf '%s' "$url" | sed 's|/|_|g ; s/$/.jpg/')"
 			if [ ! -f "$file" ]; then
 				identifier="$(printf '%s' "$url" | sed 's|.*/|| ; s/?.*//')"
-				wget -q "https://img.youtube.com/vi/$identifier/maxresdefault.jpg" -O "$file"
+				wget -q -T 5 "https://img.youtube.com/vi/$identifier/maxresdefault.jpg" -O "$file"
 			fi
-			;;
+		;;
 
 		*)
 			file="$cache/$(printf '%s' "$url" | cut -c -200 | sed 's|/|_|g ; s/$/.jpg/')"
 			if [ ! -f "$file" ]; then
-				swayimg --appid=img_whats_view --size=600x600 "$HOME/Backup/Pictures/loading_icon.gif" >/dev/null 2>&1 &
 
-				helium --headless=new --user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36" --window-size=600,600 --screenshot="$file" "$url" </dev/null
+				printf 'yes' > "$load"
+
+				#swayimg --appid=img_whats_view --size=600x600 "$HOME/Backup/Pictures/loading_icon.gif" >/dev/null 2>&1 &
+#				[ -f "$pidfile" ] && rm "$pidfile"
+
+				notify -t 20 'Getting thumbnail...'
+				timeout 20 helium --headless=new --user-agent="Chrome/135.0.0.0" --window-size=600,600 --screenshot="$file" "$url" </dev/null >/dev/null 2>&1
+
+				if [ "$(cat "$load")" = 'no' ]; then
+					notify -t 1 'Getting thumbnail: aborted'
+					exit 0
+				fi
+
+				if [ ! -f "$file" ]; then
+#					file="$HOME/Backup/Pictures/no_image.png"
+					notify -t 1 'Getting thumbnail: failed'
+					exit 1
+				else
+					notify -t 1 'Getting thumbnail: done!'
+				fi
+
 			fi
-			;;
+		;;
 
 	esac
 fi
 
-if [ ! -f "$file" ]; then
-	notify "Problem to get the file =$url="
+if [ ! -s "$file" ]; then
+	notify "Problem to get the file \"$url\""
 	exit 1
 fi
 
-SEARCH_PPM () {
-	name="$cache/${file_name}-1.ppm"
-	if [ ! -f "$name" ]; then
-		name="$cache/${file_name}-01.ppm"
-	fi
-	if [ ! -f "$name" ]; then
-		name="$cache/${file_name}-001.ppm"
-	fi
-	if [ ! -f "$name" ]; then
-		name="$cache/${file_name}-0001.ppm"
-	fi
-}
+file_extension="$(printf '%s' "${file##*.}" | tr '[:upper:]' '[:lower:]')"
 
-file_extension="$(printf '%s' "$file" | grep -oE "\.[a-zA-Z0-9]{3,4}$")"
+case "$file_extension" in
+	'pdf')
+		file_name="$(printf '%s' "$file" | awk -F '/' '{ print $NF }')"
 
-# PDF
-if [ "$file_extension" = '.pdf' ]; then 
-	file_name="$(printf '%s' "$file" | awk -F '/' '{ print $NF }')"
-
-	SEARCH_PPM;
-	if [ ! -f "$name" ]; then
-		pdftoppm -f 1 -l 1 -r 150 "$file" "$cache/$file_name" >/dev/null 2>&1
-		if [ "$?" != '0' ]; then
-			notify 'Problem to convert the pdf'
+		name="$cache/${file_name}.ppm"
+		if [ ! -s "$name" ]; then
+			pdftoppm -f 1 -l 1 -r 150 -singlefile "$file" "$cache/$file_name" >/dev/null 2>&1
+			if [ ! -s "$name" ]; then
+				notify 'Problem to convert the pdf'
+				exit 1
+			fi
 		fi
-		sleep .1
-	fi
-	SEARCH_PPM;
+	;;
 
-# HTML
-elif [ "$file_extension" = '.html' ] || [ "$file_extension" = '.htm' ]; then 
-	file_name="$(printf '%s' "$file" | awk -F '/' '{ print $NF }')"
-	name="$cache/$(printf '%s' "$file_name" | sed 's/\.html$/\.jpg/ ; s/\.htm$/\.jpg/')"
-
-	if [ ! -f "$name" ]; then
-		helium --headless --screenshot="$name" --window-size=600,600 "$file"
-		if [ "$?" != '0' ]; then
-			notify 'Problem to convert the html'
+	'htm'|'html')
+		file_name="$(printf '%s' "$file" | awk -F '/' '{ print $NF }')"
+		name="$cache/$(printf '%s' "$file_name" | sed 's/\.html$/\.jpg/ ; s/\.htm$/\.jpg/')"
+	
+		if [ ! -f "$name" ]; then
+			helium --headless --screenshot="$name" --window-size=600,600 "$file"
+			if [ ! -s "$name" ]; then
+				notify 'Problem to convert the html'
+				exit 1
+			fi
 		fi
-	fi
+	;;
 
-# video
-elif [ "$(printf '%s' "$file_extension" | grep -E 'f4v|mpeg|mp4|webv|mov')" ]; then
-	file_name="$(printf '%s' "$file" | awk -F '/' '{ print $NF }')"
-	name="$cache/$(printf '%s' "$file_name" | sed 's/\.....$/\.jpg/ ; s/\....$/\.jpg/')"
+	'f4v'|'mpeg'|'mp4'|'webv'|'webm'|'mpe'|'mov')
+		file_name="$(printf '%s' "$file" | awk -F '/' '{ print $NF }')"
+		name="$cache/$(printf '%s' "$file_name" | sed 's/\.....$/\.jpg/ ; s/\....$/\.jpg/')"
+	
+		if [ ! -f "$name" ]; then
+			ffmpeg -i "$file" -vframes 1 -q:v 1 "$name" >/dev/null 2>&1
+			sleep .1
+		fi
+	;;
 
-	if [ ! -f "$name" ]; then
-		ffmpeg -i "$file" -vframes 1 -q:v 1 "$name" >/dev/null 2>&1
-		sleep .1
-	fi
+	'jpg'|'jpeg'|'png'|'webp')
+		name="$file"
+	;;
 
+	'oga'|'zip'|'xlsx')
+		CLOSE;
+	;;
 
-# img
-elif [ "$(printf '%s' "$file_extension" | grep -E 'jpg|jpeg|png|webp')" ]; then 
-	name="$file"
+	*)
+		notify "Extension not handled: $file_extension"
+		exit 0
+	;;
 
-# audio
-elif [ "$(printf '%s' "$file_extension" | grep -E 'oga')" ]; then 
-	CLOSE;
-
-# zip
-elif [ "$file_extension" = '.zip' ]; then 
-	CLOSE;
-
-# unknown
-else
-	notify "Extension not handled: $file_extension"
-	exit 0
-fi
+esac
 
 # Open the image
-swayimg --execute='swayimg.on_initialized(function() swayimg.title = "chat" end)' --appid=img_whats_view --size=600x600 "$name" >/dev/null 2>&1 &
-swayimgpid="$!"
+# only if we are still focused on nchat
+if [ "$(dwlb -printfocused eDP-1)" = 'chat' ]; then
+#	swayimg --execute='swayimg.on_initialized(function() swayimg.title = "chat" end)' --appid=img_whats_view --size=600x600 "$name" >/dev/null 2>&1 &
+	swayimg --appid=img_whats_view --size=600x600 "$name" >/dev/null 2>&1 &
+	swayimgpid="$!"
+else
+	CLOSE;
+fi
 
 # Close other instances
-prev_pid="$(ps -ef | grep 'img_whats_view' | grep -v 'grep' | grep -v "$swayimgpid" | awk '{ print $2 }')"
+prev_pid="$(pgrep -f 'img_whats_view' | grep -v "$swayimgpid")"
 
 if [ "$prev_pid" ]; then 
 	for pid in $prev_pid ; do
@@ -168,6 +185,15 @@ if [ "$prev_pid" ]; then
 	done
 fi
 
-[ -f "$pidfile" ] && rm "$pidfile"
+time="$(date +%s)"
+printf '%s' "$time" > /tmp/nchat_sleep_time
+sleep 6
+if [ "$(cat "/tmp/nchat_sleep_time")" = "$time" ]; then
+	CLOSE;
+fi
+
+
+#[ -f "$pidfile" ] && rm "$pidfile"
+
 exit 0
 
