@@ -89,6 +89,8 @@ var (
 	namesSynced map[int]bool                 = make(map[int]bool)
 	passkeyWait map[int]bool                 = make(map[int]bool)
 	pollOptions map[int]map[string]string    = make(map[int]map[string]string)
+	newsletterServerIDs map[int]map[string]types.MessageServerID = make(map[int]map[string]types.MessageServerID)
+	newsletterLatestServerID map[int]map[string]types.MessageServerID = make(map[int]map[string]types.MessageServerID)
 )
 
 // keep in sync with enum AttachmentSendType in appconfig.h
@@ -168,6 +170,8 @@ func AddConn(conn *whatsmeow.Client, path string, sendType int) int {
 	handlers[connId] = &WmEventHandler{connId}
 	sendTypes[connId] = sendType
 	namesSynced[connId] = false
+	newsletterServerIDs[connId] = make(map[string]types.MessageServerID)
+	newsletterLatestServerID[connId] = make(map[string]types.MessageServerID)
 	mx.Unlock()
 	return connId
 }
@@ -187,6 +191,8 @@ func RemoveConn(connId int) {
 	delete(handlers, connId)
 	delete(sendTypes, connId)
 	delete(namesSynced, connId)
+	delete(newsletterServerIDs, connId)
+	delete(newsletterLatestServerID, connId)
 	mx.Unlock()
 }
 
@@ -1966,6 +1972,22 @@ func GetContactCards(contacts []*waE2E.ContactMessage) []ContactCard {
 }
 
 func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+	if messageInfo.Chat.Server == types.NewsletterServer && messageInfo.ServerID != 0 {
+		connId := handler.connId
+		chatId := StrFromJid(messageInfo.Chat)
+		mx.Lock()
+		if newsletterServerIDs[connId] == nil {
+			newsletterServerIDs[connId] = make(map[string]types.MessageServerID)
+		}
+		newsletterServerIDs[connId][string(messageInfo.ID)] = messageInfo.ServerID
+		if newsletterLatestServerID[connId] == nil {
+			newsletterLatestServerID[connId] = make(map[string]types.MessageServerID)
+		}
+		if messageInfo.ServerID > newsletterLatestServerID[connId][chatId] {
+			newsletterLatestServerID[connId][chatId] = messageInfo.ServerID
+		}
+		mx.Unlock()
+	}
 	switch {
 	case msg.Conversation != nil || msg.ExtendedTextMessage != nil:
 		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
@@ -3916,41 +3938,67 @@ func WmGetStatus(connId int, userId string) int {
 }
 
 func WmMarkMessageRead(connId int, chatId string, senderId string, msgId string) int {
-
-	LOG_TRACE("mark message read " + strconv.Itoa(connId) + ", " + chatId + ", " + senderId + ", " + msgId)
-
-	// sanity check arg
 	if connId == -1 {
 		LOG_WARNING("invalid connId")
 		return -1
 	}
 
-	// get client
-	client := GetClient(connId)
+	mx.Lock()
+	client := clients[connId]
+	mx.Unlock()
+
 	if client == nil {
 		LOG_WARNING("client is nil")
 		return -1
 	}
 
-	// mark read
-	msgIds := []types.MessageID{
-		msgId,
-	}
 	timeRead := time.Now()
 	chatJid, _ := types.ParseJID(chatId)
 	senderJid, _ := types.ParseJID(senderId)
 	ctx := context.TODO()
-	err := client.MarkRead(ctx, msgIds, timeRead, chatJid, senderJid)
 
-	// store time
+	var err error
+
+	if chatJid.Server == types.NewsletterServer {
+		// 1. Optional: Still send view count analytics to the channel
+		var serverIDs []types.MessageServerID
+		if num, parseErr := strconv.Atoi(msgId); parseErr == nil && num > 0 {
+			serverIDs = append(serverIDs, types.MessageServerID(num))
+		} else {
+			mx.Lock()
+			if m, ok := newsletterLatestServerID[connId]; ok && m[chatId] > 0 {
+				serverIDs = append(serverIDs, m[chatId])
+			}
+			mx.Unlock()
+		}
+
+		if len(serverIDs) > 0 {
+			_ = client.NewsletterMarkViewed(ctx, chatJid, serverIDs)
+		}
+
+		// 2. The critical fix: Send AppState so Android clears the unread badge
+		patch := appstate.BuildMarkChatAsRead(chatJid, true, timeRead, nil)
+		err = client.SendAppState(ctx, patch)
+		if err != nil {
+			LOG_ERROR(fmt.Sprintf("SendAppState MarkChatAsRead failed for %s: %v", chatId, err))
+		} else {
+			LOG_INFO(fmt.Sprintf("SendAppState MarkChatAsRead succeeded for %s", chatId))
+		}
+	} else {
+		// Normal chats: Send standard read receipt (blue ticks for sender)
+		msgIds := []types.MessageID{msgId}
+		err = client.MarkRead(ctx, msgIds, timeRead, chatJid, senderJid)
+
+		// Sync read state to Android phone for 1-to-1 / group chats too
+		patch := appstate.BuildMarkChatAsRead(chatJid, true, timeRead, nil)
+		_ = client.SendAppState(ctx, patch)
+	}
+
 	SetTimeRead(connId, chatId, timeRead)
 
-	// log any error
 	if err != nil {
-		LOG_WARNING(fmt.Sprintf("mark message read error %#v", err))
+		LOG_ERROR(fmt.Sprintf("mark message read error: %v", err))
 		return -1
-	} else {
-		LOG_TRACE(fmt.Sprintf("mark message read ok %#v", msgId))
 	}
 
 	return 0
