@@ -90,6 +90,8 @@ private:
     std::vector<std::string> GetGroupMembers(const std::string& p_ProfileId, const std::string& p_ChatId);
     bool GetChatInfoIsGroup(const std::string& p_ProfileId, const std::string& p_ChatId);
     bool HasProtocolFeature(const std::string& p_ProfileId, ProtocolFeature p_ProtocolFeature);
+    std::string GetSendBlockedReason();
+    std::string TakeSendFailedText();
     std::map<std::string, std::string> ParseMentions(const std::string& p_ProfileId, const std::string& p_ChatId,
                                                      const std::string& p_Text);
     void OpenCreateChat(const std::pair<std::string, std::string>& p_Chat);
@@ -255,6 +257,9 @@ private:
     bool IsChatForceHidden(const std::string& p_ChatId);
     bool IsChatForceMuted(const std::string& p_ChatId);
     void AddQuoteFromSelectedMessage(ChatMessage& p_ChatMessage);
+    void AddPendingSend(const std::string& p_ProfileId, const std::string& p_ChatId, const std::string& p_SendStr,
+                        const std::wstring& p_EntryStr, bool p_IsCaption);
+    void HandleSendResult(const std::string& p_ProfileId, std::shared_ptr<SendMessageNotify> p_SendMessageNotify);
 
   private:
     bool m_Running = true;
@@ -296,6 +301,16 @@ private:
 
     std::unordered_map<std::string, std::unordered_map<std::string, std::wstring>> m_EntryStrCleared;
     std::unordered_map<std::string, std::unordered_map<std::string, int>> m_EntryPosCleared;
+
+    struct PendingSend
+    {
+      std::string chatId;
+      std::string sendStr;
+      std::wstring entryStr;
+      bool isCaption = false;
+    };
+    std::unordered_map<std::string, std::vector<PendingSend>> m_PendingSends;
+    std::vector<std::string> m_SendFailedChatNames;
 
     std::unordered_map<std::string, std::unordered_map<std::string, std::set<std::string>>> m_UsersTyping;
     std::unordered_map<std::string, std::unordered_map<std::string, bool>> m_UserOnline;
@@ -448,6 +463,7 @@ private:
   void OnKeyFindPrev();
   void OnKeyForwardMsg();
   bool MessageDialog(const std::string& p_Title, const std::string& p_Text, float p_WReq, float p_HReq);
+  void OnKeySendMsg();
   void OnKeyDeleteMsg();
   void OnKeyDeleteChat();
   void OnKeyArchiveChat();

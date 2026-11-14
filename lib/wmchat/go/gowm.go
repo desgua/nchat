@@ -9,11 +9,17 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	_ "image/gif"
+	"image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"encoding/hex"
@@ -91,6 +97,8 @@ var (
 	pollOptions map[int]map[string]string    = make(map[int]map[string]string)
 	newsletterServerIDs map[int]map[string]types.MessageServerID = make(map[int]map[string]types.MessageServerID)
 	newsletterLatestServerID map[int]map[string]types.MessageServerID = make(map[int]map[string]types.MessageServerID)
+	presences   map[int]int                  = make(map[int]int)
+	subscribed  map[int]map[types.JID]bool   = make(map[int]map[types.JID]bool)
 )
 
 // keep in sync with enum AttachmentSendType in appconfig.h
@@ -104,6 +112,12 @@ var FileStatusNotDownloaded = 0
 var FileStatusDownloaded = 1
 var FileStatusDownloading = 2
 var FileStatusDownloadFailed = 3
+
+// sub-second sort offset passed to WmNewMessagesNotify, keep in sync with wmchat.h. a value
+// 0-999 is used as is (history sync, from its message order id), live messages are placed after
+// the chat's previous live message, and none uses a hash of the message id.
+var SortOffsetLive = -1
+var SortOffsetNone = -2
 
 // keep in sync with enum Flag in status.h
 var FlagNone = 0
@@ -180,6 +194,8 @@ func AddConn(conn *whatsmeow.Client, path string, sendType int) int {
 	if newsletterServerIDs[connId] == nil {
 		newsletterServerIDs[connId] = make(map[string]types.MessageServerID)
 	}
+	presences[connId] = -1
+	subscribed[connId] = make(map[types.JID]bool)
 	mx.Unlock()
 	return connId
 }
@@ -202,6 +218,8 @@ func RemoveConn(connId int) {
 	delete(namesSynced, connId)
 	delete(newsletterServerIDs, connId)
 	delete(newsletterLatestServerID, connId)
+	delete(presences, connId)
+	delete(subscribed, connId)
 	mx.Unlock()
 }
 
@@ -244,6 +262,37 @@ func SetState(connId int, status State) {
 	mx.Lock()
 	states[connId] = status
 	mx.Unlock()
+}
+
+func SetPresence(connId int, isOnline int) {
+	mx.Lock()
+	presences[connId] = isOnline
+	mx.Unlock()
+}
+
+func GetPresence(connId int) int {
+	mx.Lock()
+	var isOnline int = presences[connId]
+	mx.Unlock()
+	return isOnline
+}
+
+func AddSubscribed(connId int, jid types.JID) {
+	mx.Lock()
+	if subscribed[connId] != nil {
+		subscribed[connId][jid] = true
+	}
+	mx.Unlock()
+}
+
+func GetSubscribed(connId int) []types.JID {
+	mx.Lock()
+	var jids []types.JID
+	for jid := range subscribed[connId] {
+		jids = append(jids, jid)
+	}
+	mx.Unlock()
+	return jids
 }
 
 func SetPasskeyWait(connId int, isWait bool) {
@@ -763,6 +812,143 @@ func ExtensionByType(mimeType string, defaultExt string) string {
 	return ext
 }
 
+// thumbnails shown by the recipient's app until the media is downloaded
+const thumbnailMaxSize = 72
+const thumbnailMaxPixels = 40000000
+const thumbnailToolTimeout = 5 * time.Second
+
+var thumbnailToolsOnce sync.Once
+var ffmpegPath string
+var ffprobePath string
+
+func ScaledSize(width int, height int, maxSize int) (int, int) {
+	if (width <= maxSize) && (height <= maxSize) {
+		return width, height
+	}
+
+	if width >= height {
+		return maxSize, max(1, height*maxSize/width)
+	}
+
+	return max(1, width*maxSize/height), maxSize
+}
+
+// image thumbnail by nearest neighbour scaling, transparency drawn on white
+func EncodeJpegThumbnail(img image.Image) []byte {
+	bounds := img.Bounds()
+	srcWidth, srcHeight := bounds.Dx(), bounds.Dy()
+	if (srcWidth <= 0) || (srcHeight <= 0) {
+		return nil
+	}
+
+	width, height := ScaledSize(srcWidth, srcHeight, thumbnailMaxSize)
+	thumbImg := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			r, g, b, a := img.At(bounds.Min.X+(x*srcWidth/width), bounds.Min.Y+(y*srcHeight/height)).RGBA()
+			thumbImg.Set(x, y, color.RGBA{uint8((r + 0xffff - a) >> 8), uint8((g + 0xffff - a) >> 8),
+				uint8((b + 0xffff - a) >> 8), 0xff})
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, thumbImg, &jpeg.Options{Quality: 75}); err != nil {
+		LOG_WARNING(fmt.Sprintf("thumbnail encode err %#v", err))
+		return nil
+	}
+
+	return buf.Bytes()
+}
+
+// image thumbnail and size, for formats supported by go (jpeg, png, gif)
+func GetImageThumbnail(data []byte) ([]byte, uint32, uint32) {
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		LOG_DEBUG(fmt.Sprintf("image thumbnail unsupported format %#v", err))
+		return nil, 0, 0
+	}
+
+	if (config.Width <= 0) || (config.Height <= 0) || (config.Width > thumbnailMaxPixels/config.Height) {
+		LOG_DEBUG(fmt.Sprintf("image thumbnail skipped size %dx%d", config.Width, config.Height))
+		return nil, 0, 0
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		LOG_WARNING(fmt.Sprintf("image thumbnail decode err %#v", err))
+		return nil, uint32(config.Width), uint32(config.Height)
+	}
+
+	return EncodeJpegThumbnail(img), uint32(config.Width), uint32(config.Height)
+}
+
+// video thumbnail, size and duration, using ffmpeg and ffprobe if present (looked up once)
+func GetVideoThumbnail(filePath string) ([]byte, uint32, uint32, uint32) {
+	thumbnailToolsOnce.Do(func() {
+		ffmpegPath, _ = exec.LookPath("ffmpeg")
+		ffprobePath, _ = exec.LookPath("ffprobe")
+		LOG_DEBUG(fmt.Sprintf("video thumbnail ffmpeg '%s' ffprobe '%s'", ffmpegPath, ffprobePath))
+	})
+
+	if (len(ffmpegPath) == 0) || (len(ffprobePath) == 0) {
+		return nil, 0, 0, 0
+	}
+
+	// display size, i.e. swapped for videos rotated by 90 or 270 degrees
+	ctx, cancel := context.WithTimeout(context.Background(), thumbnailToolTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, ffprobePath, "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=width,height:stream_side_data=rotation:format=duration", "-of", "json",
+		filePath).Output()
+	if err != nil {
+		LOG_WARNING(fmt.Sprintf("video thumbnail ffprobe err %#v", err))
+		return nil, 0, 0, 0
+	}
+
+	var probe struct {
+		Streams []struct {
+			Width        int `json:"width"`
+			Height       int `json:"height"`
+			SideDataList []struct {
+				Rotation int `json:"rotation"`
+			} `json:"side_data_list"`
+		} `json:"streams"`
+		Format struct {
+			Duration string `json:"duration"`
+		} `json:"format"`
+	}
+	if (json.Unmarshal(out, &probe) != nil) || (len(probe.Streams) == 0) ||
+		(probe.Streams[0].Width <= 0) || (probe.Streams[0].Height <= 0) {
+		LOG_WARNING("video thumbnail ffprobe unexpected output")
+		return nil, 0, 0, 0
+	}
+
+	width, height := probe.Streams[0].Width, probe.Streams[0].Height
+	for _, sideData := range probe.Streams[0].SideDataList {
+		if (sideData.Rotation % 180) != 0 {
+			width, height = height, width
+			break
+		}
+	}
+
+	var seconds uint32 = 0
+	if duration, durErr := strconv.ParseFloat(probe.Format.Duration, 64); (durErr == nil) && (duration > 0) {
+		seconds = uint32(math.Round(duration))
+	}
+
+	// first frame, scaled by ffmpeg (which applies rotation)
+	thumbWidth, thumbHeight := ScaledSize(width, height, thumbnailMaxSize)
+	frame, err := exec.CommandContext(ctx, ffmpegPath, "-nostdin", "-v", "error", "-i", filePath,
+		"-frames:v", "1", "-vf", fmt.Sprintf("scale=%d:%d", thumbWidth, thumbHeight),
+		"-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "6", "-").Output()
+	if (err != nil) || (len(frame) < 2) || (frame[0] != 0xff) || (frame[1] != 0xd8) {
+		LOG_WARNING(fmt.Sprintf("video thumbnail ffmpeg err %#v", err))
+		return nil, uint32(width), uint32(height), seconds
+	}
+
+	return frame, uint32(width), uint32(height), seconds
+}
+
 // logger
 type ncLogger struct{}
 
@@ -919,7 +1105,7 @@ func (handler *WmEventHandler) HandleEvent(rawEvt interface{}) {
 				go ResolveNewsletter(handler.connId, evt.Info.Chat)
 			}
 		}
-		handler.HandleMessage(evt.Info, evt.Message, false /*isSyncRead*/)
+		handler.HandleMessage(evt.Info, evt.Message, false /*isSyncRead*/, SortOffsetLive)
 
 case *events.NewsletterJoin:
 		LOG_TRACE(fmt.Sprintf("%#v", evt))
@@ -1016,6 +1202,25 @@ func (handler *WmEventHandler) HandleConnected() {
 	if len(client.Store.PushName) == 0 {
 		return
 	}
+
+	// whatsapp drops own presence and presence subscriptions when the connection is lost,
+	// so restore them after (re)connect, otherwise contact status stays stale until restart.
+	isOnline := GetPresence(handler.connId)
+	if isOnline != -1 {
+		SendPresence(handler.connId, client, isOnline)
+	}
+
+	jids := GetSubscribed(handler.connId)
+	if len(jids) > 0 {
+		LOG_TRACE(fmt.Sprintf("resubscribe presence of %d users", len(jids)))
+		ctx := context.TODO()
+		for _, jid := range jids {
+			err := client.SubscribePresence(ctx, jid)
+			if err != nil {
+				LOG_WARNING(fmt.Sprintf("resubscribe presence error %#v", err))
+			}
+		}
+	}
 }
 
 func (handler *WmEventHandler) HandleReceipt(receipt *events.Receipt) {
@@ -1078,9 +1283,10 @@ func (handler *WmEventHandler) HandleUndecryptableMessage(evt *events.Undecrypta
 
 	handler.ProcessMessageInfo(messageInfo)
 
+	sortOffset := SortOffsetLive
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: view once placeholder", chatId))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), "" /*quotedId*/, "" /*fileId*/, "" /*filePath*/, FileStatusNone, timeSent,
-		BoolToInt(isRead), BoolToInt(false) /*isEdited*/)
+		BoolToInt(isRead), BoolToInt(false) /*isEdited*/, sortOffset)
 }
 
 func (handler *WmEventHandler) HandlePresence(presence *events.Presence) {
@@ -1150,7 +1356,14 @@ func (handler *WmEventHandler) HandleHistorySync(historySync *events.HistorySync
 				continue
 			}
 
-			handler.HandleMessage(*messageInfo, message, isSyncRead)
+			// history sync is not delivered in send order, but carries an order id that increases in
+			// send order, so use it for the sub-second part of the sort key (see SortOffsetLive)
+			sortOffset := SortOffsetNone
+			if syncMessage.MsgOrderID != nil {
+				sortOffset = int(syncMessage.GetMsgOrderID() % 1000)
+			}
+
+			handler.HandleMessage(*messageInfo, message, isSyncRead, sortOffset)
 			hasMessages = true
 
 			messageTime := int(messageInfo.Timestamp.Unix())
@@ -1306,6 +1519,7 @@ func (handler *WmEventHandler) HandleGroupInfo(groupInfo *events.GroupInfo) {
 	// general
 	timeSent := int(groupInfo.Timestamp.Unix())
 	msgId := strconv.Itoa(timeSent) // group info updates do not have msg id
+	sortOffset := SortOffsetLive
 	fromMe := IsSelfUser(client, senderJidStr)
 	senderId := senderJidStr
 	isSelfChat := IsSelfChat(client, chatId)
@@ -1318,7 +1532,7 @@ func (handler *WmEventHandler) HandleGroupInfo(groupInfo *events.GroupInfo) {
 
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: %s", chatId, text))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
-		BoolToInt(isRead), BoolToInt(isEdited))
+		BoolToInt(isRead), BoolToInt(isEdited), sortOffset)
 }
 
 func (handler *WmEventHandler) HandleDeleteChat(deleteChat *events.DeleteChat) {
@@ -1980,7 +2194,7 @@ func GetContactCards(contacts []*waE2E.ContactMessage) []ContactCard {
 	return cards
 }
 
-func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool, sortOffset int) {
 	if messageInfo.Chat.Server == types.NewsletterServer && messageInfo.ServerID != 0 {
 		connId := handler.connId
 		chatId := StrFromJid(messageInfo.Chat)
@@ -2002,31 +2216,32 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 	}
 	switch {
 	case msg.Conversation != nil || msg.ExtendedTextMessage != nil:
-		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
+		handler.HandleTextMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.ImageMessage != nil:
-		handler.HandleImageMessage(messageInfo, msg, isSyncRead)
+		handler.HandleImageMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.VideoMessage != nil || msg.PtvMessage != nil:
-		handler.HandleVideoMessage(messageInfo, msg, isSyncRead)
+		handler.HandleVideoMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.AudioMessage != nil:
-		handler.HandleAudioMessage(messageInfo, msg, isSyncRead)
+		handler.HandleAudioMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.DocumentMessage != nil:
-		handler.HandleDocumentMessage(messageInfo, msg, isSyncRead)
+		handler.HandleDocumentMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.StickerMessage != nil:
-		handler.HandleStickerMessage(messageInfo, msg, isSyncRead)
+		handler.HandleStickerMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.TemplateMessage != nil:
-		handler.HandleTemplateMessage(messageInfo, msg, isSyncRead)
+		handler.HandleTemplateMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.ReactionMessage != nil:
+		// reactions carry no timeSent, so they need no sort offset
 		handler.HandleReactionMessage(messageInfo, msg, isSyncRead)
 
 	case msg.ProtocolMessage != nil:
-		handler.HandleProtocolMessage(messageInfo, msg, isSyncRead)
+		handler.HandleProtocolMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.PinInChatMessage != nil:
 		handler.HandlePinInChatMessage(messageInfo, msg)
@@ -2058,7 +2273,7 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 		}
 		pollText := strings.TrimSpace(sb.String())
 		msg.Conversation = &pollText
-		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
+		handler.HandleTextMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.PollUpdateMessage != nil:
 		pollVoteText := "[Poll Vote Update]"
@@ -2092,7 +2307,7 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 			}
 		}
 		msg.Conversation = &pollVoteText
-		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
+		handler.HandleTextMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.LocationMessage != nil:
 		loc := msg.LocationMessage
@@ -2117,7 +2332,7 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 
 		locText := sb.String()
 		msg.Conversation = &locText
-		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
+		handler.HandleTextMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.LiveLocationMessage != nil:
 		loc := msg.LiveLocationMessage
@@ -2137,7 +2352,7 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 
 		locText := sb.String()
 		msg.Conversation = &locText
-		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
+		handler.HandleTextMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.ContactMessage != nil, msg.ContactsArrayMessage != nil:
 		contacts := msg.ContactsArrayMessage.GetContacts()
@@ -2147,13 +2362,13 @@ func (handler *WmEventHandler) HandleMessage(messageInfo types.MessageInfo, msg 
 
 		contactText := FormatContactCards(GetContactCards(contacts))
 		msg.Conversation = &contactText
-		handler.HandleTextMessage(messageInfo, msg, isSyncRead)
+		handler.HandleTextMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	case msg.SecretEncryptedMessage != nil:
-		handler.HandleSecretEncryptedMessage(messageInfo, msg, isSyncRead)
+		handler.HandleSecretEncryptedMessage(messageInfo, msg, isSyncRead, sortOffset)
 
 	default:
-		handler.HandleUnsupportedMessage(messageInfo, msg, isSyncRead)
+		handler.HandleUnsupportedMessage(messageInfo, msg, isSyncRead, sortOffset)
 	}
 
 	// after the message is handled, so a failure here cannot lose it
@@ -2252,7 +2467,7 @@ func (handler *WmEventHandler) ProcessMessageInfo(messageInfo types.MessageInfo)
 	}
 }
 
-func (handler *WmEventHandler) HandleTextMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+func (handler *WmEventHandler) HandleTextMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool, sortOffset int) {
 	LOG_TRACE(fmt.Sprintf("TextMessage"))
 
 	connId := handler.connId
@@ -2293,10 +2508,10 @@ func (handler *WmEventHandler) HandleTextMessage(messageInfo types.MessageInfo, 
 
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: %s", chatId, text))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
-		BoolToInt(isRead), BoolToInt(isEdited))
+		BoolToInt(isRead), BoolToInt(isEdited), sortOffset)
 }
 
-func (handler *WmEventHandler) HandleImageMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+func (handler *WmEventHandler) HandleImageMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool, sortOffset int) {
 	LOG_TRACE(fmt.Sprintf("ImageMessage"))
 
 	connId := handler.connId
@@ -2355,10 +2570,10 @@ func (handler *WmEventHandler) HandleImageMessage(messageInfo types.MessageInfo,
 
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: image", chatId))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
-		BoolToInt(isRead), BoolToInt(isEdited))
+		BoolToInt(isRead), BoolToInt(isEdited), sortOffset)
 }
 
-func (handler *WmEventHandler) HandleVideoMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+func (handler *WmEventHandler) HandleVideoMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool, sortOffset int) {
 	LOG_TRACE(fmt.Sprintf("VideoMessage"))
 
 	connId := handler.connId
@@ -2432,10 +2647,10 @@ func (handler *WmEventHandler) HandleVideoMessage(messageInfo types.MessageInfo,
 
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: video", chatId))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
-		BoolToInt(isRead), BoolToInt(isEdited))
+		BoolToInt(isRead), BoolToInt(isEdited), sortOffset)
 }
 
-func (handler *WmEventHandler) HandleAudioMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+func (handler *WmEventHandler) HandleAudioMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool, sortOffset int) {
 	LOG_TRACE(fmt.Sprintf("AudioMessage"))
 
 	connId := handler.connId
@@ -2494,7 +2709,7 @@ func (handler *WmEventHandler) HandleAudioMessage(messageInfo types.MessageInfo,
 
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: audio", chatId))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
-		BoolToInt(isRead), BoolToInt(isEdited))
+		BoolToInt(isRead), BoolToInt(isEdited), sortOffset)
 }
 
 func formatBytes(bytes uint64) string {
@@ -2510,7 +2725,7 @@ func formatBytes(bytes uint64) string {
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
-func (handler *WmEventHandler) HandleDocumentMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+func (handler *WmEventHandler) HandleDocumentMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool, sortOffset int) {
 	LOG_TRACE(fmt.Sprintf("DocumentMessage"))
 
 	connId := handler.connId
@@ -2567,10 +2782,10 @@ func (handler *WmEventHandler) HandleDocumentMessage(messageInfo types.MessageIn
 	}
 
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
-		BoolToInt(isRead), BoolToInt(isEdited))
+		BoolToInt(isRead), BoolToInt(isEdited), sortOffset)
 }
 
-func (handler *WmEventHandler) HandleStickerMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+func (handler *WmEventHandler) HandleStickerMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool, sortOffset int) {
 	LOG_TRACE(fmt.Sprintf("StickerMessage"))
 
 	connId := handler.connId
@@ -2619,10 +2834,10 @@ func (handler *WmEventHandler) HandleStickerMessage(messageInfo types.MessageInf
 
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: sticker", chatId))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
-		BoolToInt(isRead), BoolToInt(isEdited))
+		BoolToInt(isRead), BoolToInt(isEdited), sortOffset)
 }
 
-func (handler *WmEventHandler) HandleTemplateMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+func (handler *WmEventHandler) HandleTemplateMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool, sortOffset int) {
 	LOG_TRACE(fmt.Sprintf("TemplateMessage"))
 
 	connId := handler.connId
@@ -2716,7 +2931,7 @@ func (handler *WmEventHandler) HandleTemplateMessage(messageInfo types.MessageIn
 
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: template", chatId))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
-		BoolToInt(isRead), BoolToInt(isEdited))
+		BoolToInt(isRead), BoolToInt(isEdited), sortOffset)
 }
 
 func (handler *WmEventHandler) HandleReactionMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
@@ -2758,7 +2973,7 @@ func (handler *WmEventHandler) HandleReactionMessage(messageInfo types.MessageIn
 	//WmMarkMessageRead(connId, chatId, senderId, reMsgId)
 }
 
-func (handler *WmEventHandler) HandleProtocolMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+func (handler *WmEventHandler) HandleProtocolMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool, sortOffset int) {
 	LOG_TRACE(fmt.Sprintf("ProtocolMessage"))
 
 	// get protocol part
@@ -2774,7 +2989,7 @@ func (handler *WmEventHandler) HandleProtocolMessage(messageInfo types.MessageIn
 		if editedMsg != nil {
 			newMessageInfo := messageInfo
 			newMessageInfo.ID = protocol.GetKey().GetID()
-			handler.HandleMessage(newMessageInfo, editedMsg, isSyncRead)
+			handler.HandleMessage(newMessageInfo, editedMsg, isSyncRead, sortOffset)
 		} else {
 			LOG_WARNING(fmt.Sprintf("get edited message failed"))
 		}
@@ -2805,7 +3020,7 @@ func (handler *WmEventHandler) HandleProtocolMessage(messageInfo types.MessageIn
 	}
 }
 
-func (handler *WmEventHandler) HandleSecretEncryptedMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+func (handler *WmEventHandler) HandleSecretEncryptedMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool, sortOffset int) {
 	LOG_TRACE(fmt.Sprintf("SecretEncryptedMessage"))
 
 	connId := handler.connId
@@ -2825,13 +3040,13 @@ func (handler *WmEventHandler) HandleSecretEncryptedMessage(messageInfo types.Me
 	if originalId != "" {
 		newMessageInfo := messageInfo
 		newMessageInfo.ID = originalId
-		handler.HandleMessage(newMessageInfo, decrypted, isSyncRead)
+		handler.HandleMessage(newMessageInfo, decrypted, isSyncRead, sortOffset)
 	} else {
-		handler.HandleMessage(messageInfo, decrypted, isSyncRead)
+		handler.HandleMessage(messageInfo, decrypted, isSyncRead, sortOffset)
 	}
 }
 
-func (handler *WmEventHandler) HandleUnsupportedMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool) {
+func (handler *WmEventHandler) HandleUnsupportedMessage(messageInfo types.MessageInfo, msg *waE2E.Message, isSyncRead bool, sortOffset int) {
 	// list from type Message struct in def.pb.go
 	msgType := "Unknown"
 	msgNotify := false
@@ -3037,7 +3252,7 @@ func (handler *WmEventHandler) HandleUnsupportedMessage(messageInfo types.Messag
 
 	LOG_TRACE(fmt.Sprintf("Call CWmNewMessagesNotify %s: %s", chatId, text))
 	CWmNewMessagesNotify(connId, chatId, msgId, senderId, text, BoolToInt(fromMe), quotedId, fileId, filePath, fileStatus, timeSent,
-		BoolToInt(isRead), BoolToInt(isEdited))
+		BoolToInt(isRead), BoolToInt(isEdited), sortOffset)
 }
 
 func ResetTypingStatus(connId int, chatId string, userId string, fromMe bool, isSyncRead bool) {
@@ -3463,7 +3678,10 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 
 	// quote context
 	contextInfo := waE2E.ContextInfo{}
-	if len(quotedId) > 0 {
+	if len(quotedId) > 0 && len(quotedSender) == 0 {
+		// an empty participant makes whatsapp notify an unrelated group member
+		LOG_WARNING("skip quote " + quotedId + " without sender")
+	} else if len(quotedId) > 0 {
 		quotedMessage := waE2E.Message{
 			Conversation: &quotedText,
 		}
@@ -3583,6 +3801,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 				return -1
 			}
 
+			thumbnail, width, height, seconds := GetVideoThumbnail(filePath)
 			videoMessage := waE2E.VideoMessage{
 				URL:           proto.String(uploaded.URL),
 				DirectPath:    proto.String(uploaded.DirectPath),
@@ -3592,7 +3811,15 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 				FileSHA256:    uploaded.FileSHA256,
 				FileLength:    proto.Uint64(uint64(len(data))),
 				GifPlayback:   proto.Bool(true),
+				JPEGThumbnail: thumbnail,
 				ContextInfo:   &contextInfo,
+			}
+			if (width > 0) && (height > 0) {
+				videoMessage.Width = proto.Uint32(width)
+				videoMessage.Height = proto.Uint32(height)
+			}
+			if seconds > 0 {
+				videoMessage.Seconds = proto.Uint32(seconds)
 			}
 
 			message.VideoMessage = &videoMessage
@@ -3659,6 +3886,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 					return -1
 				}
 
+				thumbnail, width, height, seconds := GetVideoThumbnail(filePath)
 				videoMessage = waE2E.VideoMessage{
 					Caption:       proto.String(text),
 					URL:           proto.String(uploaded.URL),
@@ -3668,7 +3896,15 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 					FileEncSHA256: uploaded.FileEncSHA256,
 					FileSHA256:    uploaded.FileSHA256,
 					FileLength:    proto.Uint64(uint64(len(data))),
+					JPEGThumbnail: thumbnail,
 					ContextInfo:   &contextInfo,
+				}
+				if (width > 0) && (height > 0) {
+					videoMessage.Width = proto.Uint32(width)
+					videoMessage.Height = proto.Uint32(height)
+				}
+				if seconds > 0 {
+					videoMessage.Seconds = proto.Uint32(seconds)
 				}
 			}
 
@@ -3702,6 +3938,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 					return -1
 				}
 
+				thumbnail, width, height := GetImageThumbnail(data)
 				imageMessage = waE2E.ImageMessage{
 					Caption:       proto.String(text),
 					URL:           proto.String(uploaded.URL),
@@ -3711,7 +3948,12 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 					FileEncSHA256: uploaded.FileEncSHA256,
 					FileSHA256:    uploaded.FileSHA256,
 					FileLength:    proto.Uint64(uint64(len(data))),
+					JPEGThumbnail: thumbnail,
 					ContextInfo:   &contextInfo,
+				}
+				if (width > 0) && (height > 0) {
+					imageMessage.Width = proto.Uint32(width)
+					imageMessage.Height = proto.Uint32(height)
 				}
 			}
 
@@ -3808,7 +4050,7 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 
 		isSyncRead := false
 		handler := GetHandler(connId)
-		handler.HandleMessage(messageInfo, &message, isSyncRead)
+		handler.HandleMessage(messageInfo, &message, isSyncRead, SortOffsetLive)
 	}
 
 	return 0
@@ -3934,7 +4176,8 @@ func WmGetStatus(connId int, userId string) int {
 		return -1
 	}
 
-	// subscribe user presence
+	// subscribe user presence, and remember it for resubscribe after reconnect
+	AddSubscribed(connId, userJid)
 	ctx := context.TODO()
 	err := client.SubscribePresence(ctx, userJid)
 
@@ -4202,29 +4445,7 @@ func WmSendTyping(connId int, chatId string, isTyping int) int {
 	return 0
 }
 
-func WmSendStatus(connId int, isOnline int) int {
-
-	LOG_TRACE("send status " + strconv.Itoa(connId) + ", " + strconv.Itoa(isOnline))
-
-	// sanity check arg
-	if connId == -1 {
-		LOG_WARNING("invalid connId")
-		return -1
-	}
-
-	// get client
-	client := GetClient(connId)
-	if client == nil {
-		LOG_WARNING("client is nil")
-		return -1
-	}
-
-	// bail out if no push name yet
-	if len(client.Store.PushName) == 0 {
-		return -1
-	}
-
-	// set presence
+func SendPresence(connId int, client *whatsmeow.Client, isOnline int) {
 	var presence types.Presence = types.PresenceUnavailable
 	if isOnline == 1 {
 		presence = types.PresenceAvailable
@@ -4242,6 +4463,34 @@ func WmSendStatus(connId int, isOnline int) int {
 			CWmSetStatus(connId, FlagAway)
 		}
 	}
+}
+
+func WmSendStatus(connId int, isOnline int) int {
+
+	LOG_TRACE("send status " + strconv.Itoa(connId) + ", " + strconv.Itoa(isOnline))
+
+	// sanity check arg
+	if connId == -1 {
+		LOG_WARNING("invalid connId")
+		return -1
+	}
+
+	// get client
+	client := GetClient(connId)
+	if client == nil {
+		LOG_WARNING("client is nil")
+		return -1
+	}
+
+	// remember presence for resend after reconnect
+	SetPresence(connId, isOnline)
+
+	// bail out if no push name yet
+	if len(client.Store.PushName) == 0 {
+		return -1
+	}
+
+	SendPresence(connId, client, isOnline)
 
 	return 0
 }
