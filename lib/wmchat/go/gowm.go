@@ -22,6 +22,7 @@ import (
 	_ "image/png"
 	"io"
 	"math"
+	"math/rand"
 	"mime"
 	"os"
 	"os/exec"
@@ -93,6 +94,8 @@ var (
 	passkeyWait map[int]bool                 = make(map[int]bool)
 	presences   map[int]int                  = make(map[int]int)
 	subscribed  map[int]map[types.JID]bool   = make(map[int]map[types.JID]bool)
+	knownChats  map[int]map[string]bool      = make(map[int]map[string]bool)
+	lookups     map[int]map[string]int64     = make(map[int]map[string]int64)
 )
 
 // keep in sync with enum AttachmentSendType in appconfig.h
@@ -163,6 +166,10 @@ func GetExpirationsStorePath(connPath string) string {
 	return connPath + "/expirations.dat"
 }
 
+func GetLookupsStorePath(connPath string) string {
+	return connPath + "/lookups.dat"
+}
+
 func AddConn(conn *whatsmeow.Client, path string, sendType int) int {
 	mx.Lock()
 	var connId int = nextConnId
@@ -179,6 +186,8 @@ func AddConn(conn *whatsmeow.Client, path string, sendType int) int {
 	namesSynced[connId] = false
 	presences[connId] = -1
 	subscribed[connId] = make(map[types.JID]bool)
+	knownChats[connId] = make(map[string]bool)
+	lookups[connId], _ = LoadMap[int64](GetLookupsStorePath(path))
 	mx.Unlock()
 	return connId
 }
@@ -188,6 +197,7 @@ func RemoveConn(connId int) {
 	SaveMap(GetContactsStorePath(paths[connId]), contacts[connId])
 	SaveMap(GetSendersStorePath(paths[connId]), senders[connId])
 	SaveMap(GetExpirationsStorePath(paths[connId]), expirations[connId])
+	SaveMap(GetLookupsStorePath(paths[connId]), lookups[connId])
 	delete(clients, connId)
 	delete(paths, connId)
 	delete(contacts, connId)
@@ -200,6 +210,8 @@ func RemoveConn(connId int) {
 	delete(namesSynced, connId)
 	delete(presences, connId)
 	delete(subscribed, connId)
+	delete(knownChats, connId)
+	delete(lookups, connId)
 	mx.Unlock()
 }
 
@@ -328,6 +340,47 @@ func GetContactName(connId int, id string) string {
 		name = id
 	}
 	return name
+}
+
+func AddKnownChat(connId int, chatId string) {
+	mx.Lock()
+	if knownChats[connId] != nil {
+		knownChats[connId][chatId] = true
+	}
+	mx.Unlock()
+}
+
+func GetKnownChats(connId int) []string {
+	var chatIds []string
+	mx.Lock()
+	for chatId := range knownChats[connId] {
+		chatIds = append(chatIds, chatId)
+	}
+	mx.Unlock()
+	return chatIds
+}
+
+// time when to retry looking up name for a chat without a verified name
+func GetLookupRetryTime(connId int, chatId string) int64 {
+	mx.Lock()
+	retryTime := lookups[connId][chatId]
+	mx.Unlock()
+	return retryTime
+}
+
+func SetLookupRetryTime(connId int, chatId string, retryTime int64) {
+	mx.Lock()
+	if lookups[connId] == nil {
+		lookups[connId] = make(map[string]int64)
+	}
+	lookups[connId][chatId] = retryTime
+	mx.Unlock()
+}
+
+func RemoveLookupRetryTime(connId int, chatId string) {
+	mx.Lock()
+	delete(lookups[connId], chatId)
+	mx.Unlock()
 }
 
 func HasSender(connId int, id string) bool {
@@ -1323,6 +1376,7 @@ func (handler *WmEventHandler) HandleHistorySync(historySync *events.HistorySync
 			LOG_TRACE(fmt.Sprintf("Call CWmNewChatsNotify %s muted=%t pinned=%t archived=%t",
 				chatId, isMuted, isPinned, isArchived))
 			CWmNewChatsNotify(handler.connId, chatId, isUnread, BoolToInt(isMuted), BoolToInt(isPinned), BoolToInt(isArchived), lastMessageTime)
+			AddKnownChat(handler.connId, chatId)
 		} else {
 			LOG_TRACE(fmt.Sprintf("Skip CWmNewChatsNotify %s %d", chatId, len(syncMessages)))
 		}
@@ -1695,7 +1749,8 @@ func GetContacts(connId int) {
 						userIdPhones[userLid] = userIdPhones[userId]
 					}
 				} else {
-					LOG_WARNING(fmt.Sprintf("Skip empty name %s %#v", userId, contactInfo))
+					// whatsmeow keeps contacts removed from the address book, with blank names
+					LOG_DEBUG(fmt.Sprintf("Skip empty name %s", userId))
 				}
 			}
 		}
@@ -1727,7 +1782,7 @@ func GetContacts(connId int) {
 					userIdNames[userId] = name
 					userIdPhones[userId] = ""
 				} else {
-					LOG_WARNING(fmt.Sprintf("Skip empty name %s %#v", userId, contactInfo))
+					LOG_DEBUG(fmt.Sprintf("Skip empty name %s", userId))
 				}
 			}
 		}
@@ -1779,6 +1834,82 @@ func GetContacts(connId int) {
 				CWmNewContactsNotify(connId, userId, name, phone, BoolToInt(isSelf), isAlias, notify)
 				AddContactName(connId, userId, name)
 			}
+		}
+
+		// propagate names for chats not named above, ex: business accounts not in address book
+		now := time.Now().Unix()
+		var lookupJids []types.JID
+		var fallbackIds []string
+		for _, chatId := range GetKnownChats(connId) {
+			jid, err := types.ParseJID(chatId)
+			if (err != nil) || (jid.Server != types.DefaultUserServer) || (jid.User == "0") ||
+				IsSelfUser(client, chatId) {
+				continue
+			}
+
+			if _, ok := userIdNames[chatId]; ok {
+				RemoveLookupRetryTime(connId, chatId)
+				continue
+			}
+
+			if now < GetLookupRetryTime(connId, chatId) {
+				fallbackIds = append(fallbackIds, chatId) // looked up recently, without verified name
+			} else {
+				lookupJids = append(lookupJids, jid)
+			}
+		}
+
+		const lookupBatchSize = 100
+		verifiedCount := 0
+		for batchStart := 0; batchStart < len(lookupJids); batchStart += lookupBatchSize {
+			batchEnd := min(batchStart+lookupBatchSize, len(lookupJids))
+			batchJids := lookupJids[batchStart:batchEnd]
+
+			// whatsmeow stores verified business names found, but does not return them
+			_, infoErr := client.GetUserInfo(ctx, batchJids)
+			if infoErr != nil {
+				LOG_WARNING(fmt.Sprintf("get user info failed %#v", infoErr))
+			}
+
+			for _, jid := range batchJids {
+				userId := StrFromJid(jid)
+				name := ""
+				if contactInfo, err := client.Store.Contacts.GetContact(ctx, jid); err == nil {
+					name = SanitizeName(contactInfo.BusinessName)
+				}
+
+				if len(name) == 0 {
+					if infoErr == nil {
+						// retry in 23-37 days, spread to avoid many look ups at the same startup
+						retryTime := now + (23 * 86400) + rand.Int63n(14*86400)
+						SetLookupRetryTime(connId, userId, retryTime)
+					}
+
+					fallbackIds = append(fallbackIds, userId)
+					continue
+				}
+
+				verifiedCount++
+				phone := PhoneFromUserId(userId)
+				isAlias := BoolToInt(false)
+				LOG_TRACE(fmt.Sprintf("Call CWmNewContactsNotify verified %s %s", userId, name))
+				CWmNewContactsNotify(connId, userId, name, phone, BoolToInt(false), isAlias, notify)
+				AddContactName(connId, userId, name)
+			}
+		}
+
+		if len(lookupJids) > 0 {
+			LOG_INFO(fmt.Sprintf("looked up names for %d chats, %d verified", len(lookupJids), verifiedCount))
+		}
+
+		// fall back to phone number, as alias to exclude it from contact list
+		for _, userId := range fallbackIds {
+			phone := PhoneFromUserId(userId)
+			name := "+" + phone
+			isAlias := BoolToInt(true)
+			LOG_TRACE(fmt.Sprintf("Call CWmNewContactsNotify fallback %s %s", userId, name))
+			CWmNewContactsNotify(connId, userId, name, phone, BoolToInt(false), isAlias, notify)
+			AddContactName(connId, userId, name)
 		}
 	}
 

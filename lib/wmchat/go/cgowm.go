@@ -87,6 +87,11 @@ func CWmGetGroupMembers(connId int, chatId *C.char) int {
 	return WmGetGroupMembers(connId, C.GoString(chatId))
 }
 
+//export CWmAddKnownChat
+func CWmAddKnownChat(connId int, chatId *C.char) {
+	AddKnownChat(connId, C.GoString(chatId))
+}
+
 //export CWmGetContacts
 func CWmGetContacts(connId int) int {
 	return WmGetContacts(connId)

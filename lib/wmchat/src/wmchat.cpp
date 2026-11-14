@@ -158,6 +158,12 @@ bool WmChat::LoadProfile(const std::string& p_ProfilesDir, const std::string& p_
   m_ConnId = CWmInit(const_cast<char*>(m_ProfileDir.c_str()), const_cast<char*>(proxyUrl.c_str()), sendType);
   if (m_ConnId == -1) return false;
 
+  // let go side know cached chats, to look up names for chats not in address book
+  for (const std::string& chatId : MessageCache::GetChatIdsSync(m_ProfileId))
+  {
+    CWmAddKnownChat(m_ConnId, const_cast<char*>(chatId.c_str()));
+  }
+
   AddInstance(m_ConnId, this);
 
   m_ProfileDirVersion = FileUtil::GetDirVersion(m_ProfileDir);
