@@ -1466,7 +1466,8 @@ func (handler *SgEventHandler) handleChatEvent(evt *events.ChatEvent) bool {
 	}
 	selfId := UUIDToString(device.ACI)
 	fromMe := (senderId == selfId)
-	timeSent := int(info.ServerTimestamp / 1000) // Convert ms to seconds
+	// Keep milliseconds, so messages sent within the same second stay in order
+	timeSent := int64(info.ServerTimestamp)
 
 	// Resolve chat name if not already known
 	if !HasContact(connId, chatId) {
@@ -1516,7 +1517,7 @@ func (handler *SgEventHandler) handleChatEvent(evt *events.ChatEvent) bool {
 	return true
 }
 
-func (handler *SgEventHandler) handleDataMessage(chatId string, senderId string, fromMe bool, timeSent int, msg *signalpb.DataMessage) {
+func (handler *SgEventHandler) handleDataMessage(chatId string, senderId string, fromMe bool, timeSent int64, msg *signalpb.DataMessage) {
 	LOG_TRACE(fmt.Sprintf("handleDataMessage"))
 	connId := handler.connId
 
@@ -1657,7 +1658,7 @@ func decryptGroupMemberUUID(gsp *libsignalgo.GroupSecretParams, encryptedUserId 
 	return serviceID.UUID.String()
 }
 
-func (handler *SgEventHandler) handleGroupChange(chatId string, senderId string, fromMe bool, timeSent int, msg *signalpb.DataMessage) {
+func (handler *SgEventHandler) handleGroupChange(chatId string, senderId string, fromMe bool, timeSent int64, msg *signalpb.DataMessage) {
 	LOG_TRACE(fmt.Sprintf("handleGroupChange"))
 	connId := handler.connId
 
@@ -1808,7 +1809,7 @@ func (handler *SgEventHandler) handleTypingMessage(chatId string, senderId strin
 	CSgNewTypingNotify(connId, chatId, senderId, BoolToInt(isTyping))
 }
 
-func (handler *SgEventHandler) handleEditMessage(chatId string, senderId string, fromMe bool, timeSent int, msg *signalpb.EditMessage) {
+func (handler *SgEventHandler) handleEditMessage(chatId string, senderId string, fromMe bool, timeSent int64, msg *signalpb.EditMessage) {
 	LOG_TRACE(fmt.Sprintf("handleEditMessage"))
 	connId := handler.connId
 
@@ -2752,7 +2753,7 @@ func SgGetMessages(connId int, chatId string, limit int, fromMsgId string, owner
 			continue
 		}
 
-		timeSent := int(item.DateSent / 1000)
+		timeSent := int64(item.DateSent)
 		isEdited := len(item.GetRevisions()) > 0
 		if isEdited {
 			// Later edits, deletes and quotes may target any revision
@@ -2930,7 +2931,7 @@ func SgSendMessage(connId int, chatId string, text string, quotedId string, quot
 		}
 		selfId := UUIDToString(device.ACI)
 		TrackEditRevision(connId, chatId, latestMsgId, fmt.Sprintf("%d", timestamp))
-		timeSent := int(originalTimestamp / 1000)
+		timeSent := int64(originalTimestamp)
 		CSgNewMessagesNotify(connId, chatId, editMsgId, selfId, text, 1, quotedId, "", "", 0, timeSent, 1, 1, NotifyDirect)
 		TrackRecentMessage(connId, chatId, selfId, originalTimestamp)
 	} else {
@@ -3024,7 +3025,7 @@ func SgSendMessage(connId int, chatId string, text string, quotedId string, quot
 			return -1
 		}
 		selfId := UUIDToString(device.ACI)
-		timeSent := int(timestamp / 1000)
+		timeSent := int64(timestamp)
 		echoFileId := ""
 		echoFilePath := ""
 		echoFileStatus := FileStatusNone
@@ -3254,7 +3255,7 @@ func SgGetChats(connId int) int {
 					CSgNewContactsNotify(connId, chatId, chatName, "", BoolToInt(false), BoolToInt(false), NotifyDirect)
 				}
 
-				lastMessageTime := int(chat.LatestMessageID / 1000)
+				lastMessageTime := int64(chat.LatestMessageID)
 				if lastMessageTime == 0 {
 					LOG_TRACE(fmt.Sprintf("Chat %s: skip (no timestamp)", chatId))
 					continue

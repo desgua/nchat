@@ -53,13 +53,11 @@ static int GetMsgPart(const std::string& p_MsgId)
   return (sepPos != std::string::npos) ? atoi(p_MsgId.c_str() + sepPos + 1) : 0;
 }
 
-// Sort key with a pseudo-random ms offset within the second, to order messages sent in the same
-// second consistently. Attachment parts use the base id offset plus part number, keeping them in
+// Sort key from the message time in ms. Attachment parts add their part number, keeping them in
 // order directly after the base message.
-static int64_t GetTimeSentMs(int p_TimeSent, const std::string& p_MsgId)
+static int64_t GetTimeSentMs(int64_t p_TimeSent, const std::string& p_MsgId)
 {
-  return (((int64_t)p_TimeSent) * 1000) + (std::hash<std::string>{ }(GetBaseMsgId(p_MsgId)) % 256) +
-         GetMsgPart(p_MsgId);
+  return p_TimeSent + GetMsgPart(p_MsgId);
 }
 
 std::mutex SgChat::s_ConnIdMapMutex;
@@ -1002,7 +1000,7 @@ void SgNewContactsNotify(int p_ConnId, char* p_ChatId, char* p_Name, char* p_Pho
 }
 
 void SgNewChatsNotify(int p_ConnId, char* p_ChatId, int p_IsUnread, int p_IsMuted, int p_IsPinned,
-                      int p_IsArchived, int p_LastMessageTime)
+                      int p_IsArchived, int64_t p_LastMessageTime)
 {
   SgChat* instance = SgChat::GetInstance(p_ConnId);
   if (instance != nullptr)
@@ -1014,7 +1012,7 @@ void SgNewChatsNotify(int p_ConnId, char* p_ChatId, int p_IsUnread, int p_IsMute
     chatInfo.isMuted = (p_IsMuted == 1);
     chatInfo.isPinned = (p_IsPinned == 1);
     chatInfo.isArchived = (p_IsArchived == 1);
-    chatInfo.lastMessageTime = ((int64_t)p_LastMessageTime) * 1000;
+    chatInfo.lastMessageTime = p_LastMessageTime; // ms
 
     std::shared_ptr<NewChatsNotify> newChatsNotify = std::make_shared<NewChatsNotify>(instance->GetProfileId());
     newChatsNotify->success = true;
@@ -1050,7 +1048,7 @@ void SgNewGroupMembersNotify(int p_ConnId, char* p_ChatId, char* p_MembersJson)
 }
 
 void SgNewMessagesNotify(int p_ConnId, char* p_ChatId, char* p_MsgId, char* p_SenderId, char* p_Text, int p_FromMe,
-                         char* p_ReplyId, char* p_FileId, char* p_FilePath, int p_FileStatus, int p_TimeSent,
+                         char* p_ReplyId, char* p_FileId, char* p_FilePath, int p_FileStatus, int64_t p_TimeSent,
                          int p_IsRead, int p_IsEdited, int p_Notify)
 {
   SgChat* instance = SgChat::GetInstance(p_ConnId);
@@ -1126,7 +1124,7 @@ void SgNewMessagesNotify(int p_ConnId, char* p_ChatId, char* p_MsgId, char* p_Se
 
 void SgNewHistoryMessagesNotify(int p_ConnId, char* p_ChatId, char* p_MsgId, char* p_SenderId, char* p_Text,
                                 int p_FromMe, char* p_QuotedId, char* p_FileId, char* p_FilePath, int p_FileStatus,
-                                int p_TimeSent, int p_IsRead, int p_IsEdited, char* p_FromMsgId, int p_Notify)
+                                int64_t p_TimeSent, int p_IsRead, int p_IsEdited, char* p_FromMsgId, int p_Notify)
 {
   SgChat* instance = SgChat::GetInstance(p_ConnId);
   if (instance != nullptr)
