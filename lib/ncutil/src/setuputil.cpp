@@ -7,9 +7,16 @@
 
 #include "setuputil.h"
 
+#include <algorithm>
 #include <cstdlib>
+#include <cstring>
+#include <iostream>
+
+#include <sys/ioctl.h>
+#include <unistd.h>
 
 #include "appconfig.h"
+#include "fileutil.h"
 #include "log.h"
 #include "strutil.h"
 
@@ -31,12 +38,6 @@ bool SetupUtil::GetConfigOrEnvFlag(const std::string& p_EnvName)
 
 bool SetupUtil::HasGui()
 {
-  if (GetConfigOrEnvFlag("USE_QR_TERMINAL"))
-  {
-    LOG_DEBUG("has gui 0 (use_qr_terminal)");
-    return false;
-  }
-
 #ifdef __APPLE__
   LOG_DEBUG("has gui 1 (macOS)");
   return true;
@@ -73,6 +74,109 @@ bool SetupUtil::HasGui()
 #endif
 }
 
+std::string SetupUtil::GetQrPath()
+{
+  // shared by all protocols, as only one at a time holds the console for auth
+  const std::string tempDir = FileUtil::GetTempDir();
+  FileUtil::MkDir(tempDir); // not yet created during setup
+  return tempDir + "/qr.png";
+}
+
+int SetupUtil::PromptAuthMethod(const std::string& p_CodeLabel, int p_QrCols, int p_QrRows)
+{
+  // flags and gui detection only select the default, the user makes the choice
+  const bool hasCode = !p_CodeLabel.empty();
+  int defaultMethod = AuthMethodQrTerminal;
+  if (hasCode && GetConfigOrEnvFlag("USE_PAIRING_CODE"))
+  {
+    defaultMethod = AuthMethodCode;
+  }
+  else if (GetConfigOrEnvFlag("USE_QR_TERMINAL"))
+  {
+    defaultMethod = AuthMethodQrTerminal;
+  }
+  else if (!AppConfig::GetStr("qr_open_command").empty() || HasGui())
+  {
+    defaultMethod = AuthMethodQrImage;
+  }
+
+  if (!isatty(STDIN_FILENO))
+  {
+    LOG_INFO("auth method %d (default, stdin not a tty)", defaultMethod);
+    return defaultMethod;
+  }
+
+  const bool isOutTty = isatty(STDOUT_FILENO);
+  const std::string dimOn = isOutTty ? "\033[2m" : "";
+  const std::string dimOff = isOutTty ? "\033[0m" : "";
+
+  std::string qrPath = GetQrPath();
+  const char* home = getenv("HOME");
+  if ((home != nullptr) && (*home != '\0') && (qrPath.rfind(home, 0) == 0))
+  {
+    qrPath = "~" + qrPath.substr(strlen(home));
+  }
+
+  std::string terminalHint;
+  struct winsize ws;
+  const int needRows = p_QrRows + 1; // cursor line after the qr code
+  if ((ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0) && (ws.ws_col > 0) && (ws.ws_row > 0) &&
+      ((ws.ws_col < p_QrCols) || (ws.ws_row < needRows)))
+  {
+    terminalHint = "(needs " + std::to_string(p_QrCols) + "x" + std::to_string(needRows) +
+      ", terminal is " + std::to_string(ws.ws_col) + "x" + std::to_string(ws.ws_row) + ")";
+  }
+
+  // hints start in the same column, two spaces after the longest label
+  const std::string qrImageLabel = "QR code in image viewer";
+  const std::string qrTerminalLabel = "QR code in terminal";
+  const size_t hintCol = std::max(qrImageLabel.size(), qrTerminalLabel.size()) + 2;
+  auto printOption = [&](int p_Num, const std::string& p_Label, const std::string& p_Hint)
+  {
+    std::cout << p_Num << ". " << p_Label;
+    if (!p_Hint.empty())
+    {
+      std::cout << std::string(hintCol - p_Label.size(), ' ') << dimOn << p_Hint << dimOff;
+    }
+    std::cout << "\n";
+  };
+
+  std::cout << "\nAuthentication methods:\n";
+  printOption(AuthMethodQrImage, qrImageLabel, "(" + qrPath + ")");
+  printOption(AuthMethodQrTerminal, qrTerminalLabel, terminalHint);
+  if (hasCode)
+  {
+    printOption(AuthMethodCode, p_CodeLabel, "");
+  }
+
+  const int maxMethod = hasCode ? AuthMethodCode : AuthMethodQrTerminal;
+  int method = defaultMethod;
+  while (true)
+  {
+    std::cout << "Select method (" << defaultMethod << "): " << std::flush;
+    std::string choice;
+    if (!std::getline(std::cin, choice))
+    {
+      std::cout << "\n";
+      break;
+    }
+
+    StrUtil::Trim(choice);
+    if (choice.empty()) break;
+
+    if ((choice.size() == 1) && (choice[0] >= '1') && (choice[0] <= ('0' + maxMethod)))
+    {
+      method = choice[0] - '0';
+      break;
+    }
+
+    std::cout << "Invalid choice.\n";
+  }
+
+  LOG_INFO("auth method %d (default %d)", method, defaultMethod);
+  return method;
+}
+
 bool SetupUtil::IsCommandAvailable(const std::string& p_Cmd)
 {
   const std::string cmd = "command -v " + p_Cmd + " > /dev/null 2>&1";
@@ -81,11 +185,17 @@ bool SetupUtil::IsCommandAvailable(const std::string& p_Cmd)
 
 void SetupUtil::ShowImage(const std::string& p_Path)
 {
+  std::string cmd = AppConfig::GetStr("qr_open_command");
+  if (cmd.empty())
+  {
 #ifdef __APPLE__
-  std::string cmd = "open \"" + p_Path + "\" &";
+    cmd = "open '%1' &";
 #else
-  std::string cmd = "xdg-open \"" + p_Path + "\" &";
+    cmd = "xdg-open >/dev/null 2>&1 '%1' &";
 #endif
+  }
+
+  StrUtil::ReplaceString(cmd, "%1", StrUtil::EscapeSingleQuote(p_Path));
 
   int rv = system(cmd.c_str());
   if (rv != 0)

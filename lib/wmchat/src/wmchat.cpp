@@ -7,6 +7,7 @@
 
 #include "wmchat.h"
 
+#include <cstring>
 #include <iostream>
 
 #include <sys/stat.h>
@@ -94,7 +95,6 @@ bool WmChat::SetupProfile(const std::string& p_ProfilesDir, std::string& p_Profi
   std::cout << "sponsored or endorsed by WhatsApp or any of its affiliates or subsidiaries.\n";
   std::cout << "WhatsApp may disable or suspend accounts violating their Terms of Service.\n";
   std::cout << "Use at your own risk. You may abort this setup wizard by pressing CTRL-C.\n";
-  std::cout << "\n";
 
   std::string phoneNumber = StrUtil::GetPhoneNumber();
   m_ProfileId = m_ProfileId + "_" + phoneNumber;
@@ -1362,9 +1362,23 @@ void WmAppConfigSetNum(char* p_Param, int p_Value)
   free(p_Param);
 }
 
-int WmHasGui()
+int WmPromptAuthMethod()
 {
-  return SetupUtil::HasGui() ? 1 : 0;
+  // terminal qr size (cols x rows) of a whatsapp link code
+  static const int qrCols = 69;
+  static const int qrRows = 35;
+  return SetupUtil::PromptAuthMethod("Pairing code", qrCols, qrRows);
+}
+
+char* WmGetQrPath()
+{
+  return strdup(SetupUtil::GetQrPath().c_str()); // freed by caller
+}
+
+void WmShowImage(char* p_Path)
+{
+  SetupUtil::ShowImage(std::string(p_Path));
+  free(p_Path);
 }
 
 void WmLogTrace(char* p_Filename, int p_LineNo, char* p_Message)

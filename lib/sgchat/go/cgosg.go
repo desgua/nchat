@@ -10,6 +10,7 @@ package main
 // #cgo linux LDFLAGS: -Wl,-unresolved-symbols=ignore-all
 // #cgo darwin LDFLAGS: -Wl,-undefined,dynamic_lookup
 // #include <stdint.h>
+// #include <stdlib.h>
 // extern void SgNewContactsNotify(int p_ConnId, char* p_ChatId, char* p_Name, char* p_Phone, int p_IsSelf, int p_IsAlias, int p_Notify);
 // extern void SgNewChatsNotify(int p_ConnId, char* p_ChatId, int p_IsUnread, int p_IsMuted, int p_IsPinned, int p_IsArchived, int64_t p_LastMessageTime);
 // extern void SgNewGroupMembersNotify(int p_ConnId, char* p_ChatId, char* p_MembersJson);
@@ -32,7 +33,9 @@ package main
 // extern void SgClearStatus(int p_ConnId, int p_Flags);
 // extern int SgAppConfigGetNum(char* p_Param);
 // extern void SgAppConfigSetNum(char* p_Param, int p_Value);
-// extern int SgHasGui();
+// extern int SgPromptAuthMethod();
+// extern char* SgGetQrPath();
+// extern void SgShowImage(char* p_Path);
 // extern void SgLogTrace(char* p_Filename, int p_LineNo, char* p_Message);
 // extern void SgLogDebug(char* p_Filename, int p_LineNo, char* p_Message);
 // extern void SgLogInfo(char* p_Filename, int p_LineNo, char* p_Message);
@@ -43,6 +46,7 @@ import "C"
 import (
 	"path/filepath"
 	"runtime"
+	"unsafe"
 )
 
 //export CSgInit
@@ -228,8 +232,18 @@ func CSgAppConfigSetNum(param string, value int) {
 	C.SgAppConfigSetNum(C.CString(param), C.int(value))
 }
 
-func CSgHasGui() int {
-	return int(C.SgHasGui())
+func CSgPromptAuthMethod() int {
+	return int(C.SgPromptAuthMethod())
+}
+
+func CSgShowImage(path string) {
+	C.SgShowImage(C.CString(path))
+}
+
+func CSgGetQrPath() string {
+	cstr := C.SgGetQrPath()
+	defer C.free(unsafe.Pointer(cstr))
+	return C.GoString(cstr)
 }
 
 func LOG_TRACE(message string) {

@@ -7,6 +7,7 @@
 
 #include "tgchat.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <iostream>
@@ -161,6 +162,7 @@ private:
   };
 
   void StartAuthInput(AuthInputType p_Type);
+  int GetAuthMethod();
   void StopAuthInput();
   void AuthInputLoop();
 
@@ -246,6 +248,7 @@ private:
   td::td_api::object_ptr<td::td_api::AuthorizationState> m_AuthorizationState;
   bool m_IsSetup = false;
   bool m_IsReinit = false;
+  int m_AuthMethod = 0;
   bool m_Authorized = false;
   bool m_WasAuthorized = false;
   std::int64_t m_SelfUserId = 0;
@@ -2501,6 +2504,12 @@ void TgChat::Impl::OnAuthStateUpdate()
   [this](td::td_api::authorizationStateReady&)
   {
     LOG_DEBUG("auth ready");
+    const std::string qrPath = SetupUtil::GetQrPath();
+    if (FileUtil::Exists(qrPath))
+    {
+      FileUtil::RmFile(qrPath);
+    }
+
     m_Authorized = true;
     m_WasAuthorized = true;
     if (m_IsSetup)
@@ -2614,7 +2623,7 @@ void TgChat::Impl::OnAuthStateUpdate()
   [this](td::td_api::authorizationStateWaitPhoneNumber&)
   {
     LOG_DEBUG("auth wait phone number");
-    if (!SetupUtil::GetConfigOrEnvFlag("USE_PAIRING_CODE"))
+    if (GetAuthMethod() != SetupUtil::AuthMethodCode)
     {
       LOG_DEBUG("requesting QR auth");
       SendQuery(td::td_api::make_object<td::td_api::requestQrCodeAuthentication>(
@@ -2633,12 +2642,6 @@ void TgChat::Impl::OnAuthStateUpdate()
       {
         LOG_DEBUG("reinit number");
         phone_number = GetProfilePhoneNumber();
-        if (!m_IsReinit)
-        {
-          m_IsReinit = true;
-          SetProtocolUiControl(true);
-          std::cout << "Telegram reauthentication for " << phone_number << " required\n\n";
-        }
       }
 
       SendQuery(td::td_api::make_object<td::td_api::setAuthenticationPhoneNumber>(phone_number,
@@ -2702,18 +2705,13 @@ void TgChat::Impl::OnAuthStateUpdate()
   [this](td::td_api::authorizationStateWaitOtherDeviceConfirmation& state)
   {
     LOG_DEBUG("auth wait other device link");
-    if (!m_IsSetup && !m_IsReinit)
-    {
-      m_IsReinit = true;
-      SetProtocolUiControl(true);
-      std::cout << "Telegram reauthentication for " << GetProfilePhoneNumber() << " required\n\n";
-    }
+    const int authMethod = GetAuthMethod();
 
     std::cout << "\nOpen Telegram on your phone, go to Settings -> Devices\n";
     std::cout << "and click Link Desktop Device and scan the QR code.\n\n";
-    if (SetupUtil::HasGui())
+    if (authMethod == SetupUtil::AuthMethodQrImage)
     {
-      std::string qrPath = FileUtil::GetTempDir() + "/tg_qr.png";
+      const std::string qrPath = SetupUtil::GetQrPath();
       if (QrUtil::WritePngFile(state.link_, qrPath))
       {
         SetupUtil::ShowImage(qrPath);
@@ -2721,7 +2719,10 @@ void TgChat::Impl::OnAuthStateUpdate()
     }
     else
     {
-      std::cout << QrUtil::ToTerminalString(state.link_);
+      const std::string qrStr = QrUtil::ToTerminalString(state.link_);
+      LOG_DEBUG("qr terminal rows %d len %d", (int)std::count(qrStr.begin(), qrStr.end(), '\n'),
+                (int)state.link_.size());
+      std::cout << qrStr;
     }
 
     LOG_DEBUG("Link URL: %s", state.link_.c_str());
@@ -2733,6 +2734,26 @@ void TgChat::Impl::OnAuthStateUpdate()
   }
   ));
   // *INDENT-ON*
+}
+
+int TgChat::Impl::GetAuthMethod()
+{
+  if (m_AuthMethod == 0)
+  {
+    if (!m_IsSetup && !m_IsReinit)
+    {
+      m_IsReinit = true;
+      SetProtocolUiControl(true);
+      std::cout << "Telegram reauthentication for " << GetProfilePhoneNumber() << " required\n";
+    }
+
+    // terminal qr size (cols x rows) of a telegram login link
+    static const int qrCols = 45;
+    static const int qrRows = 23;
+    m_AuthMethod = SetupUtil::PromptAuthMethod("Login code", qrCols, qrRows);
+  }
+
+  return m_AuthMethod;
 }
 
 void TgChat::Impl::StartAuthInput(AuthInputType p_Type)
@@ -2792,7 +2813,7 @@ void TgChat::Impl::AuthInputLoop()
     {
       case AuthInputCode:
         {
-          std::cout << "Enter authentication code: ";
+          std::cout << "Login code: ";
           std::string code;
           std::getline(std::cin, code);
           if (std::cin.fail() || std::cin.eof())
@@ -2808,7 +2829,7 @@ void TgChat::Impl::AuthInputLoop()
 
       case AuthInputPassword:
         {
-          std::cout << "Enter authentication password: ";
+          std::cout << "Authentication password: ";
           std::string password = StrUtil::GetPass();
           if (std::cin.fail() || std::cin.eof())
           {
@@ -2825,7 +2846,7 @@ void TgChat::Impl::AuthInputLoop()
         {
           std::string first_name;
           std::string last_name;
-          std::cout << "Enter your first name: ";
+          std::cout << "First name: ";
           std::getline(std::cin, first_name);
           if (std::cin.fail() || std::cin.eof())
           {
@@ -2833,7 +2854,7 @@ void TgChat::Impl::AuthInputLoop()
             return;
           }
 
-          std::cout << "Enter your last name: ";
+          std::cout << "Last name: ";
           std::getline(std::cin, last_name);
           if (std::cin.fail() || std::cin.eof())
           {
@@ -2901,6 +2922,7 @@ void TgChat::Impl::CheckAuthError(Object object)
 
       m_IsSetup = false;
       m_IsReinit = false;
+      m_AuthMethod = 0;
 
       LOG_TRACE("request app exit");
       std::shared_ptr<RequestAppExitNotify> requestAppExitNotify =

@@ -8,6 +8,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
@@ -15,7 +16,6 @@ import (
 	"fmt"
 	"mime"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -713,16 +713,7 @@ func DownloadFromFileId(connId int, fileId string) (string, int) {
 
 // utils
 func ShowImage(path string) {
-	switch runtime.GOOS {
-	case "linux":
-		LOG_DEBUG("xdg-open " + path)
-		exec.Command("xdg-open", path).Start()
-	case "darwin":
-		LOG_DEBUG("open " + path)
-		exec.Command("open", path).Start()
-	default:
-		LOG_WARNING(fmt.Sprintf("unsupported os \"%s\"", runtime.GOOS))
-	}
+	CSgShowImage(path) // uses qr_open_command if set
 }
 
 func GetOSName() string {
@@ -740,8 +731,26 @@ func GetDeviceName() string {
 	return "nchat (" + GetOSName() + ")"
 }
 
-func HasGUI() bool {
-	return IntToBool(CSgHasGui())
+// auth methods, same values as SetupUtil::AuthMethod
+const (
+	AuthMethodQrImage    = 1
+	AuthMethodQrTerminal = 2
+)
+
+func PromptAuthMethod() int {
+	return CSgPromptAuthMethod()
+}
+
+func ShowQrTerminal(code string) {
+	var buf bytes.Buffer
+	qrterminal.GenerateHalfBlock(code, qrterminal.L, &buf)
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	cols := 0
+	for _, line := range lines {
+		cols = max(cols, utf8.RuneCountInString(line))
+	}
+	LOG_DEBUG(fmt.Sprintf("qr terminal %dx%d len %d", cols, len(lines), len(code)))
+	fmt.Print(buf.String())
 }
 
 func BoolToInt(b bool) int {
@@ -2323,7 +2332,6 @@ func SgLogin(connId int) int {
 		return -1
 	}
 
-	path := GetPath(connId)
 	client := GetClient(connId)
 	device := GetDevice(connId)
 	container := GetContainer(connId)
@@ -2341,6 +2349,9 @@ func SgLogin(connId int) int {
 		LOG_TRACE(fmt.Sprintf("acquire console"))
 		CSgSetProtocolUiControl(connId, 1)
 
+		qrPath := CSgGetQrPath()
+		useQrImage := (PromptAuthMethod() == AuthMethodQrImage)
+
 		fmt.Printf("\n")
 		fmt.Printf("Open Signal on your phone, go to Settings > Linked devices.\n")
 		fmt.Printf("Click on \"Link a device\", unlock the phone and aim its camera at the\n")
@@ -2352,19 +2363,17 @@ func SgLogin(connId int) int {
 		allowBackup := true
 		provChan := signalmeow.PerformProvisioning(ctx, container, deviceName, allowBackup)
 
-		hasGUI := HasGUI()
 		qrDisplayed := false
 
 		for resp := range provChan {
 			switch resp.State {
 			case signalmeow.StateProvisioningURLReceived:
 				LOG_DEBUG("provisioning URL received")
-				if hasGUI {
-					qrPath := path + "/tmp/qr.png"
+				if useQrImage {
 					qrcode.WriteFile(resp.ProvisioningURL, qrcode.Medium, 512, qrPath)
 					ShowImage(qrPath)
 				} else {
-					qrterminal.GenerateHalfBlock(resp.ProvisioningURL, qrterminal.L, os.Stdout)
+					ShowQrTerminal(resp.ProvisioningURL)
 				}
 				qrDisplayed = true
 
@@ -2406,7 +2415,7 @@ func SgLogin(connId int) int {
 
 		// delete temporary image file
 		if qrDisplayed {
-			_ = os.Remove(path + "/tmp/qr.png")
+			_ = os.Remove(qrPath)
 		}
 
 		LOG_TRACE(fmt.Sprintf("release console"))

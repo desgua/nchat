@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -567,16 +568,7 @@ func DownloadFromFileInfo(client *whatsmeow.Client, info DownloadInfo) ([]byte, 
 
 // utils
 func ShowImage(path string) {
-	switch runtime.GOOS {
-	case "linux":
-		LOG_DEBUG("xdg-open " + path)
-		exec.Command("xdg-open", path).Start()
-	case "darwin":
-		LOG_DEBUG("open " + path)
-		exec.Command("open", path).Start()
-	default:
-		LOG_WARNING(fmt.Sprintf("unsupported os \"%s\"", runtime.GOOS))
-	}
+	CWmShowImage(path) // uses qr_open_command if set
 }
 
 func GetOSName() string {
@@ -619,8 +611,27 @@ func GetConfigOrEnvFlag(envVarName string) bool {
 	return false
 }
 
-func HasGUI() bool {
-	return IntToBool(CWmHasGui())
+// auth methods, same values as SetupUtil::AuthMethod
+const (
+	AuthMethodQrImage    = 1
+	AuthMethodQrTerminal = 2
+	AuthMethodCode       = 3
+)
+
+func PromptAuthMethod() int {
+	return CWmPromptAuthMethod()
+}
+
+func ShowQrTerminal(code string) {
+	var buf bytes.Buffer
+	qrterminal.GenerateHalfBlock(code, qrterminal.L, &buf)
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	cols := 0
+	for _, line := range lines {
+		cols = max(cols, utf8.RuneCountInString(line))
+	}
+	LOG_DEBUG(fmt.Sprintf("qr terminal %dx%d len %d", cols, len(lines), len(code)))
+	fmt.Print(buf.String())
 }
 
 func BoolToInt(b bool) int {
@@ -2975,13 +2986,17 @@ func WmLogin(connId int) int {
 		}
 	} else {
 		timeoutMs = 60000 // 60 sec timeout during setup / qr code scan
+
+		// prompt before connect, so the timeout does not include the user's choice
+		LOG_TRACE(fmt.Sprintf("acquire console"))
+		CWmSetProtocolUiControl(connId, 1)
+
+		qrPath := CWmGetQrPath()
+		authMethod := PromptAuthMethod()
+		usePairingCode := (authMethod == AuthMethodCode)
+		useQrImage := (authMethod == AuthMethodQrImage)
+
 		go func() {
-			hasGUI := HasGUI()
-			usePairingCode := GetConfigOrEnvFlag("USE_PAIRING_CODE")
-
-			LOG_TRACE(fmt.Sprintf("acquire console"))
-			CWmSetProtocolUiControl(connId, 1)
-
 			if usePairingCode {
 				fmt.Printf("\n")
 				fmt.Printf("Open the WhatsApp notification \"Enter code to link new device\" on your phone,\n")
@@ -3019,12 +3034,11 @@ func WmLogin(connId int) int {
 							fmt.Printf("\n")
 						}
 					} else {
-						if hasGUI {
-							qrPath := path + "/tmp/qr.png"
+						if useQrImage {
 							qrcode.WriteFile(evt.Code, qrcode.Medium, 512, qrPath)
 							ShowImage(qrPath)
 						} else {
-							qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+							ShowQrTerminal(evt.Code)
 						}
 					}
 				} else if evt.Event == whatsmeow.QRChannelEventPasskeyRequest {
@@ -3057,6 +3071,9 @@ func WmLogin(connId int) int {
 				}
 			}
 
+			// delete temporary image file before another protocol can take the console
+			_ = os.Remove(qrPath)
+
 			LOG_TRACE(fmt.Sprintf("release console"))
 			CWmSetProtocolUiControl(connId, 0)
 		}()
@@ -3088,9 +3105,6 @@ func WmLogin(connId int) int {
 		waitedMs += 100
 	}
 	LOG_DEBUG("wait done")
-
-	// delete temporary image file
-	_ = os.Remove(path + "/tmp/qr.png")
 
 	// log error on stdout
 	if GetState(connId) != Connected {

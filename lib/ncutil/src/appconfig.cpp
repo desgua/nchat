@@ -38,6 +38,7 @@ void AppConfig::Init()
     { "proxy_pass", "" },
     { "proxy_port", "" },
     { "proxy_user", "" },
+    { "qr_open_command", "" },
     { "timestamp_iso", "0" },
     { "use_pairing_code", "0" },
     { "use_qr_terminal", "0" },

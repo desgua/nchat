@@ -283,21 +283,31 @@ code. Example:
     3. Signal
     4. Exit setup
     Select protocol (4): 1
-    Enter phone number (ex. +6511111111): +6511111111
+
+    Phone number (ex. +6511111111): +6511111111
+
+    Authentication methods:
+    1. QR code in image viewer  (~/.config/nchat/temp/qr.png)
+    2. QR code in terminal
+    3. Login code
+    Select method (1):
 
     Open Telegram on your phone, go to Settings -> Devices
     and click Link Desktop Device and scan the QR code.
     ...
     Succesfully set up profile Telegram_+6511111111
 
-By default, nchat uses QR code authentication. The QR code should be scanned
-using the official app on the primary device. To use authentication code
-instead, set the `USE_PAIRING_CODE` environment variable (see FAQ below).
+The setup mode then asks for the authentication method: QR code in an image
+viewer, QR code in the terminal, or login code / pairing code
+(Telegram/WhatsApp). Pressing Enter selects the default, which is the image
+viewer if a GUI is detected, otherwise the terminal (see FAQ below). The QR
+code should be scanned using the official app on the primary device.
 
 If unsure of what phone number to enter, open the official app on the phone
 and look for the phone number under Settings or Profile section, and use
 the number displayed there (omitting spaces, so for the below screenshot
-the number to enter is `+6511111111`).
+the number to enter is `+6511111111`). Environment variable
+`NCHAT_PHONE_NUMBER` allows setting a default phone number.
 
 ![screenshot telegram phone](/doc/screenshot-phone.png)
 
@@ -356,6 +366,7 @@ This configuration file holds general application settings. Default content:
     proxy_pass=
     proxy_port=
     proxy_user=
+    qr_open_command=
     timestamp_iso=0
     use_pairing_code=0
     use_qr_terminal=0
@@ -443,6 +454,19 @@ config dir to be created, and then edit proxy settings in
 `~/.config/nchat/app.conf` as needed, before running `nchat -s` to setup an
 account.
 
+### qr_open_command
+
+Specifies a custom command to use for opening/viewing the QR code image during
+setup. The command shall include `%1` which will be replaced by the filename
+to open. If not specified, the following default commands are used:
+
+Linux: `xdg-open >/dev/null 2>&1 '%1' &`
+
+macOS: `open '%1' &`
+
+To use it for the first setup, run nchat once without arguments, so the config
+file is created, then set it and run `nchat -s`.
+
 ### timestamp_iso
 
 Specifies whether to use ISO-style timestamps (`YYYY-MM-DD HH:MM`) in the UI
@@ -458,14 +482,14 @@ format:
 ### use_pairing_code
 
 Stores the environment variable flag `USE_PAIRING_CODE` if set during setup.
-It specifies whether to use pairing code / authentication code instead of
-QR code (Telegram/WhatsApp).
+It specifies whether pairing code / login code is the default
+authentication method (Telegram/WhatsApp).
 
 ### use_qr_terminal
 
 Stores the environment variable flag `USE_QR_TERMINAL` if set during setup.
-It specifies whether to display QR code in the terminal, disabling detection
-of GUI capability for displaying images.
+It specifies whether QR code in the terminal is the default authentication
+method, instead of detecting GUI capability for displaying images.
 
 ### version_used
 
@@ -1259,22 +1283,18 @@ after initial sync:
 
 ### 6. How to set up Telegram / WhatsApp without scanning a QR code?
 
-By default setting up a Telegram or WhatsApp account will display a QR code
-to be scanned using the mobile application on the primary device. As an
-alternative one can set an environment flag to use authentication code
-(Telegram) or pairing code (WhatsApp) instead:
-
-    USE_PAIRING_CODE=1 nchat -s
+When setting up a Telegram or WhatsApp account, select `Login code` (Telegram)
+or `Pairing code` (WhatsApp) as authentication method. Optionally
+one can make it the default option by setting env var `USE_PAIRING_CODE=1`.
 
 ### 7. No QR code is shown when setting up Telegram / WhatsApp / Signal?
 
-By default nchat will attempt to detect if the system is capable of viewing
-images using a GUI image viewer, and if detected (indicated by "has gui" in
-the log) it displays the QR code using default image viewer. If that for some
-reason fails, one can use pairing code (see above), or force nchat to display
-the QR code in the terminal:
-
-    USE_QR_TERMINAL=1 nchat -s
+If `QR code in image viewer` does not open any image viewer, the file can
+be manually opened (path is shown during setup), or one can configure a custom
+image viewer with `qr_open_command` in `app.conf`. Alternatively use the
+`QR code in terminal` method which displays the QR code directly in the
+terminal. Optionally one can make terminal the default option by setting env
+var `USE_QR_TERMINAL=1`.
 
 ### 8. Build fails with `c++: fatal error: Killed signal terminated program cc1plus`?
 
