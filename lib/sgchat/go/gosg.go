@@ -70,6 +70,7 @@ var (
 	recentMsgs  map[int]map[string][]recentMessage             = make(map[int]map[string][]recentMessage)
 	stateStore  map[int]map[string]string                      = make(map[int]map[string]string)
 	chatTimers  map[int]map[string]ChatTimer                   = make(map[int]map[string]ChatTimer)
+	chatEdits   map[int]map[string]ChatEdits                   = make(map[int]map[string]ChatEdits)
 )
 
 const maxRecentMessages = 5
@@ -135,6 +136,10 @@ func GetChatTimersStorePath(connPath string) string {
 	return connPath + "/timers.dat"
 }
 
+func GetChatEditsStorePath(connPath string) string {
+	return connPath + "/edits.dat"
+}
+
 func GetChatsSynced(connId int) bool {
 	mx.Lock()
 	defer mx.Unlock()
@@ -164,6 +169,7 @@ func AddConn(client *signalmeow.Client, device *store.Device, container *store.C
 	recentMsgs[connId] = make(map[string][]recentMessage)
 	stateStore[connId], _ = LoadMap[string](GetStateStorePath(path))
 	chatTimers[connId], _ = LoadMap[ChatTimer](GetChatTimersStorePath(path))
+	chatEdits[connId], _ = LoadMap[ChatEdits](GetChatEditsStorePath(path))
 	mx.Unlock()
 	return connId
 }
@@ -172,6 +178,7 @@ func RemoveConn(connId int) {
 	mx.Lock()
 	SaveMap(GetStateStorePath(paths[connId]), stateStore[connId])
 	SaveMap(GetChatTimersStorePath(paths[connId]), chatTimers[connId])
+	SaveMap(GetChatEditsStorePath(paths[connId]), chatEdits[connId])
 	delete(clients, connId)
 	delete(devices, connId)
 	delete(containers, connId)
@@ -185,6 +192,7 @@ func RemoveConn(connId int) {
 	delete(recentMsgs, connId)
 	delete(stateStore, connId)
 	delete(chatTimers, connId)
+	delete(chatEdits, connId)
 	mx.Unlock()
 }
 
@@ -284,6 +292,123 @@ func GetSendTimer(ctx context.Context, connId int, chatId string) (uint32, uint3
 	}
 
 	return chatTimer.Timer, max(chatTimer.Version, initialTimerVersion)
+}
+
+// ChatEdits maps between a chat's original message ids and their edit
+// revisions. In Signal each edit has its own timestamp, and a later edit (or a
+// delete from a phone) targets the latest revision's timestamp. nchat keeps the
+// original timestamp as message id, like for the other protocols.
+type ChatEdits struct {
+	Originals map[string]string `json:"originals"` // revision id -> original id
+	Latest    map[string]string `json:"latest"`    // original id -> latest revision id
+}
+
+// GetOriginalMsgId returns the original message id of an edit revision, or the
+// id as is if it is not a known revision.
+func GetOriginalMsgId(connId int, chatId string, msgId string) string {
+	mx.Lock()
+	defer mx.Unlock()
+	if originalId, ok := chatEdits[connId][chatId].Originals[msgId]; ok {
+		return originalId
+	}
+	return msgId
+}
+
+// GetLatestMsgId returns the latest edit revision id of a message, or the id as
+// is if the message is not known to be edited.
+func GetLatestMsgId(connId int, chatId string, msgId string) string {
+	mx.Lock()
+	defer mx.Unlock()
+	if latestId, ok := chatEdits[connId][chatId].Latest[msgId]; ok {
+		return latestId
+	}
+	return msgId
+}
+
+// TrackEditRevision stores a new edit revision of the message targeted by an
+// edit, and returns the original message id.
+func TrackEditRevision(connId int, chatId string, targetId string, revisionId string) string {
+	mx.Lock()
+	defer mx.Unlock()
+	connEdits, ok := chatEdits[connId]
+	if !ok {
+		return targetId
+	}
+
+	edits := connEdits[chatId]
+	if edits.Originals == nil {
+		edits.Originals = make(map[string]string)
+	}
+	if edits.Latest == nil {
+		edits.Latest = make(map[string]string)
+	}
+	connEdits[chatId] = edits
+
+	originalId := targetId
+	if id, ok := edits.Originals[targetId]; ok {
+		originalId = id
+	}
+
+	edits.Originals[revisionId] = originalId
+	latestId, hasLatest := edits.Latest[originalId]
+	if !hasLatest || (MsgIdLess(latestId, revisionId)) {
+		edits.Latest[originalId] = revisionId // edits may arrive out of order
+	}
+
+	LOG_TRACE(fmt.Sprintf("track edit %s %s -> %s (target %s)", chatId, revisionId, originalId, targetId))
+	SaveMap(GetChatEditsStorePath(paths[connId]), connEdits) // save now, a lost revision breaks the next edit
+	return originalId
+}
+
+// SeedEditRevisions stores the revisions of an edited message from the
+// link-time transfer archive, where nchat uses msgId as message id.
+func SeedEditRevisions(connId int, chatId string, msgId string, revisionIds []string) {
+	mx.Lock()
+	defer mx.Unlock()
+	connEdits, ok := chatEdits[connId]
+	if !ok {
+		return
+	}
+
+	edits := connEdits[chatId]
+	if edits.Originals == nil {
+		edits.Originals = make(map[string]string)
+	}
+	if edits.Latest == nil {
+		edits.Latest = make(map[string]string)
+	}
+	connEdits[chatId] = edits
+
+	latestId := msgId
+	for _, revisionId := range revisionIds {
+		if revisionId != msgId {
+			edits.Originals[revisionId] = msgId
+		}
+		if MsgIdLess(latestId, revisionId) {
+			latestId = revisionId
+		}
+	}
+
+	if storedId, ok := edits.Latest[msgId]; !ok || MsgIdLess(storedId, latestId) {
+		edits.Latest[msgId] = latestId
+	}
+}
+
+func SaveChatEdits(connId int) {
+	mx.Lock()
+	defer mx.Unlock()
+	if connEdits, ok := chatEdits[connId]; ok {
+		SaveMap(GetChatEditsStorePath(paths[connId]), connEdits)
+	}
+}
+
+func MsgIdLess(a string, b string) bool {
+	aNum, aErr := strconv.ParseUint(a, 10, 64)
+	bNum, bErr := strconv.ParseUint(b, 10, 64)
+	if (aErr != nil) || (bErr != nil) {
+		return a < b
+	}
+	return aNum < bNum
 }
 
 func GetClient(connId int) *signalmeow.Client {
@@ -1403,7 +1528,7 @@ func (handler *SgEventHandler) handleDataMessage(chatId string, senderId string,
 	}
 
 	if msg.GetDelete() != nil {
-		targetMsgId := fmt.Sprintf("%d", msg.GetDelete().GetTargetSentTimestamp())
+		targetMsgId := GetOriginalMsgId(connId, chatId, fmt.Sprintf("%d", msg.GetDelete().GetTargetSentTimestamp()))
 		LOG_TRACE(fmt.Sprintf("handleDataMessage delete %s %s", chatId, targetMsgId))
 		CSgDeleteMessageNotify(connId, chatId, targetMsgId, BoolToInt(fromMe))
 		return
@@ -1458,7 +1583,7 @@ func (handler *SgEventHandler) handleDataMessage(chatId string, senderId string,
 	}
 	quotedId := ""
 	if msg.GetQuote() != nil {
-		quotedId = fmt.Sprintf("%d", msg.GetQuote().GetId())
+		quotedId = GetOriginalMsgId(connId, chatId, fmt.Sprintf("%d", msg.GetQuote().GetId()))
 	}
 
 	msgId := fmt.Sprintf("%d", msg.GetTimestamp())
@@ -1697,14 +1822,17 @@ func (handler *SgEventHandler) handleEditMessage(chatId string, senderId string,
 	text = ProcessFormattedText(connId, text, dataMsg.GetBodyRanges())
 	quotedId := ""
 	if dataMsg.GetQuote() != nil {
-		quotedId = fmt.Sprintf("%d", dataMsg.GetQuote().GetId())
+		quotedId = GetOriginalMsgId(connId, chatId, fmt.Sprintf("%d", dataMsg.GetQuote().GetId()))
 	}
 
 	fileId := ""
 	filePath := ""
 	fileStatus := FileStatusNone
 
-	msgId := fmt.Sprintf("%d", msg.GetTargetSentTimestamp())
+	// Edits target the previous revision, so resolve it to the original message id
+	targetId := fmt.Sprintf("%d", msg.GetTargetSentTimestamp())
+	revisionId := fmt.Sprintf("%d", dataMsg.GetTimestamp())
+	msgId := TrackEditRevision(connId, chatId, targetId, revisionId)
 	isRead := fromMe
 	isEdited := true
 
@@ -1726,7 +1854,7 @@ func (handler *SgEventHandler) handleReaction(chatId string, senderId string, fr
 	if reaction.GetRemove() {
 		emoji = ""
 	}
-	msgId := fmt.Sprintf("%d", reaction.GetTargetSentTimestamp())
+	msgId := GetOriginalMsgId(connId, chatId, fmt.Sprintf("%d", reaction.GetTargetSentTimestamp()))
 
 	CSgNewMessageReactionNotify(connId, chatId, msgId, senderId, emoji, BoolToInt(fromMe))
 }
@@ -1930,7 +2058,7 @@ func (handler *SgEventHandler) handleDeleteForMe(evt *events.DeleteForMe) bool {
 		}
 
 		for _, msg := range msgDelete.GetMessages() {
-			msgId := fmt.Sprintf("%d", msg.GetSentTimestamp())
+			msgId := GetOriginalMsgId(connId, chatIdStr, fmt.Sprintf("%d", msg.GetSentTimestamp()))
 			LOG_TRACE(fmt.Sprintf("Call CSgDeleteMessageNotify %s %s", chatIdStr, msgId))
 			CSgDeleteMessageNotify(connId, chatIdStr, msgId, BoolToInt(true))
 		}
@@ -2525,6 +2653,7 @@ func SgGetMessages(connId int, chatId string, limit int, fromMsgId string, owner
 
 	// Build recipient ID -> UUID string cache
 	recipientCache := make(map[uint64]string)
+	hasEdits := false
 
 	for i, item := range items {
 		notify := NotifyCache
@@ -2625,6 +2754,15 @@ func SgGetMessages(connId int, chatId string, limit int, fromMsgId string, owner
 
 		timeSent := int(item.DateSent / 1000)
 		isEdited := len(item.GetRevisions()) > 0
+		if isEdited {
+			// Later edits, deletes and quotes may target any revision
+			revisionIds := []string{msgId}
+			for _, revision := range item.GetRevisions() {
+				revisionIds = append(revisionIds, fmt.Sprintf("%d", revision.GetDateSent()))
+			}
+			SeedEditRevisions(connId, chatId, msgId, revisionIds)
+			hasEdits = true
+		}
 
 		// Text and quote on the first part, only the last part may flush the cached batch
 		for part := 0; part == 0 || part < len(files); part++ {
@@ -2657,6 +2795,10 @@ func SgGetMessages(connId int, chatId string, limit int, fromMsgId string, owner
 				partQuotedId, fileId, filePath, fileStatus, timeSent, BoolToInt(isRead), BoolToInt(isEdited), fromMsgId,
 				partNotify)
 		}
+	}
+
+	if hasEdits {
+		SaveChatEdits(connId)
 	}
 
 	return 0
@@ -2728,9 +2870,17 @@ func SgSendMessage(connId int, chatId string, text string, quotedId string, quot
 			return -1
 		}
 
-		targetTimestamp, err := strconv.ParseUint(editMsgId, 10, 64)
+		originalTimestamp, err := strconv.ParseUint(editMsgId, 10, 64)
 		if err != nil {
 			LOG_WARNING(fmt.Sprintf("invalid edit msg id: %s", editMsgId))
+			return -1
+		}
+
+		// An edit targets the latest revision of the message
+		latestMsgId := GetLatestMsgId(connId, chatId, editMsgId)
+		targetTimestamp, err := strconv.ParseUint(latestMsgId, 10, 64)
+		if err != nil {
+			LOG_WARNING(fmt.Sprintf("invalid edit target msg id: %s", latestMsgId))
 			return -1
 		}
 
@@ -2779,9 +2929,10 @@ func SgSendMessage(connId int, chatId string, text string, quotedId string, quot
 			return -1
 		}
 		selfId := UUIDToString(device.ACI)
-		timeSent := int(targetTimestamp / 1000)
+		TrackEditRevision(connId, chatId, latestMsgId, fmt.Sprintf("%d", timestamp))
+		timeSent := int(originalTimestamp / 1000)
 		CSgNewMessagesNotify(connId, chatId, editMsgId, selfId, text, 1, quotedId, "", "", 0, timeSent, 1, 1, NotifyDirect)
-		TrackRecentMessage(connId, chatId, selfId, targetTimestamp)
+		TrackRecentMessage(connId, chatId, selfId, originalTimestamp)
 	} else {
 		// Set body
 		if text != "" {
