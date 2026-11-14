@@ -68,6 +68,7 @@ channel=#debian-next
   to message or query a IRC user, send `/msg user message` or `/query user` in any IRC channel.  
   to search for channels: `/list my_search`  
   to temporary join a channel (to make the join permanent, manually add to irc.conf file): `/join awesowe_channel`  
+![screenshot nchat](/doc/screenshot-nchat.png)
 
 Features
 --------
@@ -85,7 +86,7 @@ Features
 - Message history cache with text export
 - Desktop notifications for new messages
 - Toggle textized vs. graphical emojis
-- Customizable [themes](https://github.com/d99kris/nchat/wiki/Themes) and key bindings
+- Customizable themes and key bindings
 
 
 Quick Install
