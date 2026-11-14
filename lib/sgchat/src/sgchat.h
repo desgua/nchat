@@ -123,14 +123,14 @@ extern "C" {
 void SgNewContactsNotify(int p_ConnId, char* p_ChatId, char* p_Name, char* p_Phone, int p_IsSelf, int p_IsAlias,
                          int p_Notify);
 void SgNewChatsNotify(int p_ConnId, char* p_ChatId, int p_IsUnread, int p_IsMuted, int p_IsPinned,
-                      int p_IsArchived, int p_LastMessageTime);
+                      int p_IsArchived, int64_t p_LastMessageTime);
 void SgNewGroupMembersNotify(int p_ConnId, char* p_ChatId, char* p_MembersJson);
 void SgNewMessagesNotify(int p_ConnId, char* p_ChatId, char* p_MsgId, char* p_SenderId, char* p_Text, int p_FromMe,
-                         char* p_ReplyId, char* p_FileId, char* p_FilePath, int p_FileStatus, int p_TimeSent,
+                         char* p_ReplyId, char* p_FileId, char* p_FilePath, int p_FileStatus, int64_t p_TimeSent,
                          int p_IsRead, int p_IsEdited, int p_Notify);
 void SgNewHistoryMessagesNotify(int p_ConnId, char* p_ChatId, char* p_MsgId, char* p_SenderId, char* p_Text,
                                 int p_FromMe, char* p_QuotedId, char* p_FileId, char* p_FilePath, int p_FileStatus,
-                                int p_TimeSent, int p_IsRead, int p_IsEdited, char* p_FromMsgId, int p_Notify);
+                                int64_t p_TimeSent, int p_IsRead, int p_IsEdited, char* p_FromMsgId, int p_Notify);
 void SgNewStatusNotify(int p_ConnId, char* p_UserId, int p_IsOnline, int p_TimeSeen);
 void SgNewTypingNotify(int p_ConnId, char* p_ChatId, char* p_UserId, int p_IsTyping);
 void SgNewMessageStatusNotify(int p_ConnId, char* p_ChatId, char* p_MsgId, int p_IsRead);
@@ -150,7 +150,9 @@ void SgSetStatus(int p_ConnId, int p_Flags);
 void SgClearStatus(int p_ConnId, int p_Flags);
 int SgAppConfigGetNum(char* p_Param);
 void SgAppConfigSetNum(char* p_Param, int p_Value);
-int SgHasGui();
+int SgPromptAuthMethod();
+char* SgGetQrPath();
+void SgShowImage(char* p_Path);
 void SgLogTrace(char* p_Filename, int p_LineNo, char* p_Message);
 void SgLogDebug(char* p_Filename, int p_LineNo, char* p_Message);
 void SgLogInfo(char* p_Filename, int p_LineNo, char* p_Message);

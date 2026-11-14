@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"encoding/hex"
 	"math"
+	"math/rand"
 	"mime"
 	"os"
 	"os/exec"
@@ -38,6 +39,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -99,6 +101,8 @@ var (
 	newsletterLatestServerID map[int]map[string]types.MessageServerID = make(map[int]map[string]types.MessageServerID)
 	presences   map[int]int                  = make(map[int]int)
 	subscribed  map[int]map[types.JID]bool   = make(map[int]map[types.JID]bool)
+	knownChats  map[int]map[string]bool      = make(map[int]map[string]bool)
+	lookups     map[int]map[string]int64     = make(map[int]map[string]int64)
 )
 
 // keep in sync with enum AttachmentSendType in appconfig.h
@@ -173,6 +177,10 @@ func GetNewsletterServerIDsStorePath(connPath string) string {
 	return connPath + "/newsletter_server_ids.dat"
 }
 
+func GetLookupsStorePath(connPath string) string {
+	return connPath + "/lookups.dat"
+}
+
 func AddConn(conn *whatsmeow.Client, path string, sendType int) int {
 	mx.Lock()
 	var connId int = nextConnId
@@ -196,6 +204,8 @@ func AddConn(conn *whatsmeow.Client, path string, sendType int) int {
 	}
 	presences[connId] = -1
 	subscribed[connId] = make(map[types.JID]bool)
+	knownChats[connId] = make(map[string]bool)
+	lookups[connId], _ = LoadMap[int64](GetLookupsStorePath(path))
 	mx.Unlock()
 	return connId
 }
@@ -206,6 +216,7 @@ func RemoveConn(connId int) {
 	SaveMap(GetSendersStorePath(paths[connId]), senders[connId])
 	SaveMap(GetExpirationsStorePath(paths[connId]), expirations[connId])
 	SaveMap(GetNewsletterServerIDsStorePath(paths[connId]), newsletterServerIDs[connId])
+	SaveMap(GetLookupsStorePath(paths[connId]), lookups[connId])
 	delete(clients, connId)
 	delete(paths, connId)
 	delete(contacts, connId)
@@ -220,6 +231,8 @@ func RemoveConn(connId int) {
 	delete(newsletterLatestServerID, connId)
 	delete(presences, connId)
 	delete(subscribed, connId)
+	delete(knownChats, connId)
+	delete(lookups, connId)
 	mx.Unlock()
 }
 
@@ -348,6 +361,47 @@ func GetContactName(connId int, id string) string {
 		name = id
 	}
 	return name
+}
+
+func AddKnownChat(connId int, chatId string) {
+	mx.Lock()
+	if knownChats[connId] != nil {
+		knownChats[connId][chatId] = true
+	}
+	mx.Unlock()
+}
+
+func GetKnownChats(connId int) []string {
+	var chatIds []string
+	mx.Lock()
+	for chatId := range knownChats[connId] {
+		chatIds = append(chatIds, chatId)
+	}
+	mx.Unlock()
+	return chatIds
+}
+
+// time when to retry looking up name for a chat without a verified name
+func GetLookupRetryTime(connId int, chatId string) int64 {
+	mx.Lock()
+	retryTime := lookups[connId][chatId]
+	mx.Unlock()
+	return retryTime
+}
+
+func SetLookupRetryTime(connId int, chatId string, retryTime int64) {
+	mx.Lock()
+	if lookups[connId] == nil {
+		lookups[connId] = make(map[string]int64)
+	}
+	lookups[connId][chatId] = retryTime
+	mx.Unlock()
+}
+
+func RemoveLookupRetryTime(connId int, chatId string) {
+	mx.Lock()
+	delete(lookups[connId], chatId)
+	mx.Unlock()
 }
 
 func HasSender(connId int, id string) bool {
@@ -596,16 +650,7 @@ func DownloadFromFileInfo(client *whatsmeow.Client, info DownloadInfo) ([]byte, 
 
 // utils
 func ShowImage(path string) {
-	switch runtime.GOOS {
-	case "linux":
-		LOG_DEBUG("xdg-open " + path)
-		exec.Command("xdg-open", path).Start()
-	case "darwin":
-		LOG_DEBUG("open " + path)
-		exec.Command("open", path).Start()
-	default:
-		LOG_WARNING(fmt.Sprintf("unsupported os \"%s\"", runtime.GOOS))
-	}
+	CWmShowImage(path) // uses qr_open_command if set
 }
 
 func GetOSName() string {
@@ -648,8 +693,27 @@ func GetConfigOrEnvFlag(envVarName string) bool {
 	return false
 }
 
-func HasGUI() bool {
-	return IntToBool(CWmHasGui())
+// auth methods, same values as SetupUtil::AuthMethod
+const (
+	AuthMethodQrImage    = 1
+	AuthMethodQrTerminal = 2
+	AuthMethodCode       = 3
+)
+
+func PromptAuthMethod() int {
+	return CWmPromptAuthMethod()
+}
+
+func ShowQrTerminal(code string) {
+	var buf bytes.Buffer
+	qrterminal.GenerateHalfBlock(code, qrterminal.L, &buf)
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	cols := 0
+	for _, line := range lines {
+		cols = max(cols, utf8.RuneCountInString(line))
+	}
+	LOG_DEBUG(fmt.Sprintf("qr terminal %dx%d len %d", cols, len(lines), len(code)))
+	fmt.Print(buf.String())
 }
 
 func BoolToInt(b bool) int {
@@ -1410,6 +1474,7 @@ func (handler *WmEventHandler) HandleHistorySync(historySync *events.HistorySync
 			LOG_TRACE(fmt.Sprintf("Call CWmNewChatsNotify %s muted=%t pinned=%t archived=%t",
 				chatId, isMuted, isPinned, isArchived))
 			CWmNewChatsNotify(handler.connId, chatId, isUnread, BoolToInt(isMuted), BoolToInt(isPinned), BoolToInt(isArchived), lastMessageTime)
+			AddKnownChat(handler.connId, chatId)
 		} else {
 			LOG_TRACE(fmt.Sprintf("Skip CWmNewChatsNotify %s %d", chatId, len(syncMessages)))
 		}
@@ -1782,7 +1847,8 @@ func GetContacts(connId int) {
 						userIdPhones[userLid] = userIdPhones[userId]
 					}
 				} else {
-					LOG_WARNING(fmt.Sprintf("Skip empty name %s %#v", userId, contactInfo))
+					// whatsmeow keeps contacts removed from the address book, with blank names
+					LOG_DEBUG(fmt.Sprintf("Skip empty name %s", userId))
 				}
 			}
 		}
@@ -1814,7 +1880,7 @@ func GetContacts(connId int) {
 					userIdNames[userId] = name
 					userIdPhones[userId] = ""
 				} else {
-					LOG_WARNING(fmt.Sprintf("Skip empty name %s %#v", userId, contactInfo))
+					LOG_DEBUG(fmt.Sprintf("Skip empty name %s", userId))
 				}
 			}
 		}
@@ -1866,6 +1932,82 @@ func GetContacts(connId int) {
 				CWmNewContactsNotify(connId, userId, name, phone, BoolToInt(isSelf), isAlias, notify)
 				AddContactName(connId, userId, name)
 			}
+		}
+
+		// propagate names for chats not named above, ex: business accounts not in address book
+		now := time.Now().Unix()
+		var lookupJids []types.JID
+		var fallbackIds []string
+		for _, chatId := range GetKnownChats(connId) {
+			jid, err := types.ParseJID(chatId)
+			if (err != nil) || (jid.Server != types.DefaultUserServer) || (jid.User == "0") ||
+				IsSelfUser(client, chatId) {
+				continue
+			}
+
+			if _, ok := userIdNames[chatId]; ok {
+				RemoveLookupRetryTime(connId, chatId)
+				continue
+			}
+
+			if now < GetLookupRetryTime(connId, chatId) {
+				fallbackIds = append(fallbackIds, chatId) // looked up recently, without verified name
+			} else {
+				lookupJids = append(lookupJids, jid)
+			}
+		}
+
+		const lookupBatchSize = 100
+		verifiedCount := 0
+		for batchStart := 0; batchStart < len(lookupJids); batchStart += lookupBatchSize {
+			batchEnd := min(batchStart+lookupBatchSize, len(lookupJids))
+			batchJids := lookupJids[batchStart:batchEnd]
+
+			// whatsmeow stores verified business names found, but does not return them
+			_, infoErr := client.GetUserInfo(ctx, batchJids)
+			if infoErr != nil {
+				LOG_WARNING(fmt.Sprintf("get user info failed %#v", infoErr))
+			}
+
+			for _, jid := range batchJids {
+				userId := StrFromJid(jid)
+				name := ""
+				if contactInfo, err := client.Store.Contacts.GetContact(ctx, jid); err == nil {
+					name = SanitizeName(contactInfo.BusinessName)
+				}
+
+				if len(name) == 0 {
+					if infoErr == nil {
+						// retry in 23-37 days, spread to avoid many look ups at the same startup
+						retryTime := now + (23 * 86400) + rand.Int63n(14*86400)
+						SetLookupRetryTime(connId, userId, retryTime)
+					}
+
+					fallbackIds = append(fallbackIds, userId)
+					continue
+				}
+
+				verifiedCount++
+				phone := PhoneFromUserId(userId)
+				isAlias := BoolToInt(false)
+				LOG_TRACE(fmt.Sprintf("Call CWmNewContactsNotify verified %s %s", userId, name))
+				CWmNewContactsNotify(connId, userId, name, phone, BoolToInt(false), isAlias, notify)
+				AddContactName(connId, userId, name)
+			}
+		}
+
+		if len(lookupJids) > 0 {
+			LOG_INFO(fmt.Sprintf("looked up names for %d chats, %d verified", len(lookupJids), verifiedCount))
+		}
+
+		// fall back to phone number, as alias to exclude it from contact list
+		for _, userId := range fallbackIds {
+			phone := PhoneFromUserId(userId)
+			name := "+" + phone
+			isAlias := BoolToInt(true)
+			LOG_TRACE(fmt.Sprintf("Call CWmNewContactsNotify fallback %s %s", userId, name))
+			CWmNewContactsNotify(connId, userId, name, phone, BoolToInt(false), isAlias, notify)
+			AddContactName(connId, userId, name)
 		}
 	}
 
@@ -3454,13 +3596,17 @@ func WmLogin(connId int) int {
 		}
 	} else {
 		timeoutMs = 60000 // 60 sec timeout during setup / qr code scan
+
+		// prompt before connect, so the timeout does not include the user's choice
+		LOG_TRACE(fmt.Sprintf("acquire console"))
+		CWmSetProtocolUiControl(connId, 1)
+
+		qrPath := CWmGetQrPath()
+		authMethod := PromptAuthMethod()
+		usePairingCode := (authMethod == AuthMethodCode)
+		useQrImage := (authMethod == AuthMethodQrImage)
+
 		go func() {
-			hasGUI := HasGUI()
-			usePairingCode := GetConfigOrEnvFlag("USE_PAIRING_CODE")
-
-			LOG_TRACE(fmt.Sprintf("acquire console"))
-			CWmSetProtocolUiControl(connId, 1)
-
 			if usePairingCode {
 				fmt.Printf("\n")
 				fmt.Printf("Open the WhatsApp notification \"Enter code to link new device\" on your phone,\n")
@@ -3498,12 +3644,11 @@ func WmLogin(connId int) int {
 							fmt.Printf("\n")
 						}
 					} else {
-						if hasGUI {
-							qrPath := path + "/tmp/qr.png"
+						if useQrImage {
 							qrcode.WriteFile(evt.Code, qrcode.Medium, 512, qrPath)
 							ShowImage(qrPath)
 						} else {
-							qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+							ShowQrTerminal(evt.Code)
 						}
 					}
 				} else if evt.Event == whatsmeow.QRChannelEventPasskeyRequest {
@@ -3536,6 +3681,9 @@ func WmLogin(connId int) int {
 				}
 			}
 
+			// delete temporary image file before another protocol can take the console
+			_ = os.Remove(qrPath)
+
 			LOG_TRACE(fmt.Sprintf("release console"))
 			CWmSetProtocolUiControl(connId, 0)
 		}()
@@ -3567,9 +3715,6 @@ func WmLogin(connId int) int {
 		waitedMs += 100
 	}
 	LOG_DEBUG("wait done")
-
-	// delete temporary image file
-	_ = os.Remove(path + "/tmp/qr.png")
 
 	// log error on stdout
 	if GetState(connId) != Connected {

@@ -8,6 +8,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
@@ -15,7 +16,6 @@ import (
 	"fmt"
 	"mime"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -71,6 +71,7 @@ var (
 	recentMsgs  map[int]map[string][]recentMessage             = make(map[int]map[string][]recentMessage)
 	stateStore  map[int]map[string]string                      = make(map[int]map[string]string)
 	chatTimers  map[int]map[string]ChatTimer                   = make(map[int]map[string]ChatTimer)
+	chatEdits   map[int]map[string]ChatEdits                   = make(map[int]map[string]ChatEdits)
 )
 
 const maxRecentMessages = 5
@@ -136,6 +137,10 @@ func GetChatTimersStorePath(connPath string) string {
 	return connPath + "/timers.dat"
 }
 
+func GetChatEditsStorePath(connPath string) string {
+	return connPath + "/edits.dat"
+}
+
 func GetChatsSynced(connId int) bool {
 	mx.Lock()
 	defer mx.Unlock()
@@ -165,6 +170,7 @@ func AddConn(client *signalmeow.Client, device *store.Device, container *store.C
 	recentMsgs[connId] = make(map[string][]recentMessage)
 	stateStore[connId], _ = LoadMap[string](GetStateStorePath(path))
 	chatTimers[connId], _ = LoadMap[ChatTimer](GetChatTimersStorePath(path))
+	chatEdits[connId], _ = LoadMap[ChatEdits](GetChatEditsStorePath(path))
 	mx.Unlock()
 	return connId
 }
@@ -173,6 +179,7 @@ func RemoveConn(connId int) {
 	mx.Lock()
 	SaveMap(GetStateStorePath(paths[connId]), stateStore[connId])
 	SaveMap(GetChatTimersStorePath(paths[connId]), chatTimers[connId])
+	SaveMap(GetChatEditsStorePath(paths[connId]), chatEdits[connId])
 	delete(clients, connId)
 	delete(devices, connId)
 	delete(containers, connId)
@@ -186,6 +193,7 @@ func RemoveConn(connId int) {
 	delete(recentMsgs, connId)
 	delete(stateStore, connId)
 	delete(chatTimers, connId)
+	delete(chatEdits, connId)
 	mx.Unlock()
 }
 
@@ -285,6 +293,123 @@ func GetSendTimer(ctx context.Context, connId int, chatId string) (uint32, uint3
 	}
 
 	return chatTimer.Timer, max(chatTimer.Version, initialTimerVersion)
+}
+
+// ChatEdits maps between a chat's original message ids and their edit
+// revisions. In Signal each edit has its own timestamp, and a later edit (or a
+// delete from a phone) targets the latest revision's timestamp. nchat keeps the
+// original timestamp as message id, like for the other protocols.
+type ChatEdits struct {
+	Originals map[string]string `json:"originals"` // revision id -> original id
+	Latest    map[string]string `json:"latest"`    // original id -> latest revision id
+}
+
+// GetOriginalMsgId returns the original message id of an edit revision, or the
+// id as is if it is not a known revision.
+func GetOriginalMsgId(connId int, chatId string, msgId string) string {
+	mx.Lock()
+	defer mx.Unlock()
+	if originalId, ok := chatEdits[connId][chatId].Originals[msgId]; ok {
+		return originalId
+	}
+	return msgId
+}
+
+// GetLatestMsgId returns the latest edit revision id of a message, or the id as
+// is if the message is not known to be edited.
+func GetLatestMsgId(connId int, chatId string, msgId string) string {
+	mx.Lock()
+	defer mx.Unlock()
+	if latestId, ok := chatEdits[connId][chatId].Latest[msgId]; ok {
+		return latestId
+	}
+	return msgId
+}
+
+// TrackEditRevision stores a new edit revision of the message targeted by an
+// edit, and returns the original message id.
+func TrackEditRevision(connId int, chatId string, targetId string, revisionId string) string {
+	mx.Lock()
+	defer mx.Unlock()
+	connEdits, ok := chatEdits[connId]
+	if !ok {
+		return targetId
+	}
+
+	edits := connEdits[chatId]
+	if edits.Originals == nil {
+		edits.Originals = make(map[string]string)
+	}
+	if edits.Latest == nil {
+		edits.Latest = make(map[string]string)
+	}
+	connEdits[chatId] = edits
+
+	originalId := targetId
+	if id, ok := edits.Originals[targetId]; ok {
+		originalId = id
+	}
+
+	edits.Originals[revisionId] = originalId
+	latestId, hasLatest := edits.Latest[originalId]
+	if !hasLatest || (MsgIdLess(latestId, revisionId)) {
+		edits.Latest[originalId] = revisionId // edits may arrive out of order
+	}
+
+	LOG_TRACE(fmt.Sprintf("track edit %s %s -> %s (target %s)", chatId, revisionId, originalId, targetId))
+	SaveMap(GetChatEditsStorePath(paths[connId]), connEdits) // save now, a lost revision breaks the next edit
+	return originalId
+}
+
+// SeedEditRevisions stores the revisions of an edited message from the
+// link-time transfer archive, where nchat uses msgId as message id.
+func SeedEditRevisions(connId int, chatId string, msgId string, revisionIds []string) {
+	mx.Lock()
+	defer mx.Unlock()
+	connEdits, ok := chatEdits[connId]
+	if !ok {
+		return
+	}
+
+	edits := connEdits[chatId]
+	if edits.Originals == nil {
+		edits.Originals = make(map[string]string)
+	}
+	if edits.Latest == nil {
+		edits.Latest = make(map[string]string)
+	}
+	connEdits[chatId] = edits
+
+	latestId := msgId
+	for _, revisionId := range revisionIds {
+		if revisionId != msgId {
+			edits.Originals[revisionId] = msgId
+		}
+		if MsgIdLess(latestId, revisionId) {
+			latestId = revisionId
+		}
+	}
+
+	if storedId, ok := edits.Latest[msgId]; !ok || MsgIdLess(storedId, latestId) {
+		edits.Latest[msgId] = latestId
+	}
+}
+
+func SaveChatEdits(connId int) {
+	mx.Lock()
+	defer mx.Unlock()
+	if connEdits, ok := chatEdits[connId]; ok {
+		SaveMap(GetChatEditsStorePath(paths[connId]), connEdits)
+	}
+}
+
+func MsgIdLess(a string, b string) bool {
+	aNum, aErr := strconv.ParseUint(a, 10, 64)
+	bNum, bErr := strconv.ParseUint(b, 10, 64)
+	if (aErr != nil) || (bErr != nil) {
+		return a < b
+	}
+	return aNum < bNum
 }
 
 func GetClient(connId int) *signalmeow.Client {
@@ -589,16 +714,7 @@ func DownloadFromFileId(connId int, fileId string) (string, int) {
 
 // utils
 func ShowImage(path string) {
-	switch runtime.GOOS {
-	case "linux":
-		LOG_DEBUG("xdg-open " + path)
-		exec.Command("xdg-open", path).Start()
-	case "darwin":
-		LOG_DEBUG("open " + path)
-		exec.Command("open", path).Start()
-	default:
-		LOG_WARNING(fmt.Sprintf("unsupported os \"%s\"", runtime.GOOS))
-	}
+	CSgShowImage(path) // uses qr_open_command if set
 }
 
 func GetOSName() string {
@@ -616,8 +732,26 @@ func GetDeviceName() string {
 	return "nchat (" + GetOSName() + ")"
 }
 
-func HasGUI() bool {
-	return IntToBool(CSgHasGui())
+// auth methods, same values as SetupUtil::AuthMethod
+const (
+	AuthMethodQrImage    = 1
+	AuthMethodQrTerminal = 2
+)
+
+func PromptAuthMethod() int {
+	return CSgPromptAuthMethod()
+}
+
+func ShowQrTerminal(code string) {
+	var buf bytes.Buffer
+	qrterminal.GenerateHalfBlock(code, qrterminal.L, &buf)
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	cols := 0
+	for _, line := range lines {
+		cols = max(cols, utf8.RuneCountInString(line))
+	}
+	LOG_DEBUG(fmt.Sprintf("qr terminal %dx%d len %d", cols, len(lines), len(code)))
+	fmt.Print(buf.String())
 }
 
 func BoolToInt(b bool) int {
@@ -1342,7 +1476,8 @@ func (handler *SgEventHandler) handleChatEvent(evt *events.ChatEvent) bool {
 	}
 	selfId := UUIDToString(device.ACI)
 	fromMe := (senderId == selfId)
-	timeSent := int(info.ServerTimestamp / 1000) // Convert ms to seconds
+	// Keep milliseconds, so messages sent within the same second stay in order
+	timeSent := int64(info.ServerTimestamp)
 
 	// Resolve chat name if not already known
 	if !HasContact(connId, chatId) {
@@ -1392,7 +1527,7 @@ func (handler *SgEventHandler) handleChatEvent(evt *events.ChatEvent) bool {
 	return true
 }
 
-func (handler *SgEventHandler) handleDataMessage(chatId string, senderId string, fromMe bool, timeSent int, msg *signalpb.DataMessage) {
+func (handler *SgEventHandler) handleDataMessage(chatId string, senderId string, fromMe bool, timeSent int64, msg *signalpb.DataMessage) {
 	LOG_TRACE(fmt.Sprintf("handleDataMessage"))
 	connId := handler.connId
 
@@ -1404,7 +1539,7 @@ func (handler *SgEventHandler) handleDataMessage(chatId string, senderId string,
 	}
 
 	if msg.GetDelete() != nil {
-		targetMsgId := fmt.Sprintf("%d", msg.GetDelete().GetTargetSentTimestamp())
+		targetMsgId := GetOriginalMsgId(connId, chatId, fmt.Sprintf("%d", msg.GetDelete().GetTargetSentTimestamp()))
 		LOG_TRACE(fmt.Sprintf("handleDataMessage delete %s %s", chatId, targetMsgId))
 		CSgDeleteMessageNotify(connId, chatId, targetMsgId, BoolToInt(fromMe))
 		return
@@ -1459,7 +1594,7 @@ func (handler *SgEventHandler) handleDataMessage(chatId string, senderId string,
 	}
 	quotedId := ""
 	if msg.GetQuote() != nil {
-		quotedId = fmt.Sprintf("%d", msg.GetQuote().GetId())
+		quotedId = GetOriginalMsgId(connId, chatId, fmt.Sprintf("%d", msg.GetQuote().GetId()))
 	}
 
 	msgId := fmt.Sprintf("%d", msg.GetTimestamp())
@@ -1533,7 +1668,7 @@ func decryptGroupMemberUUID(gsp *libsignalgo.GroupSecretParams, encryptedUserId 
 	return serviceID.UUID.String()
 }
 
-func (handler *SgEventHandler) handleGroupChange(chatId string, senderId string, fromMe bool, timeSent int, msg *signalpb.DataMessage) {
+func (handler *SgEventHandler) handleGroupChange(chatId string, senderId string, fromMe bool, timeSent int64, msg *signalpb.DataMessage) {
 	LOG_TRACE(fmt.Sprintf("handleGroupChange"))
 	connId := handler.connId
 
@@ -1684,7 +1819,7 @@ func (handler *SgEventHandler) handleTypingMessage(chatId string, senderId strin
 	CSgNewTypingNotify(connId, chatId, senderId, BoolToInt(isTyping))
 }
 
-func (handler *SgEventHandler) handleEditMessage(chatId string, senderId string, fromMe bool, timeSent int, msg *signalpb.EditMessage) {
+func (handler *SgEventHandler) handleEditMessage(chatId string, senderId string, fromMe bool, timeSent int64, msg *signalpb.EditMessage) {
 	LOG_TRACE(fmt.Sprintf("handleEditMessage"))
 	connId := handler.connId
 
@@ -1698,14 +1833,17 @@ func (handler *SgEventHandler) handleEditMessage(chatId string, senderId string,
 	text = ProcessFormattedText(connId, text, dataMsg.GetBodyRanges())
 	quotedId := ""
 	if dataMsg.GetQuote() != nil {
-		quotedId = fmt.Sprintf("%d", dataMsg.GetQuote().GetId())
+		quotedId = GetOriginalMsgId(connId, chatId, fmt.Sprintf("%d", dataMsg.GetQuote().GetId()))
 	}
 
 	fileId := ""
 	filePath := ""
 	fileStatus := FileStatusNone
 
-	msgId := fmt.Sprintf("%d", msg.GetTargetSentTimestamp())
+	// Edits target the previous revision, so resolve it to the original message id
+	targetId := fmt.Sprintf("%d", msg.GetTargetSentTimestamp())
+	revisionId := fmt.Sprintf("%d", dataMsg.GetTimestamp())
+	msgId := TrackEditRevision(connId, chatId, targetId, revisionId)
 	isRead := fromMe
 	isEdited := true
 
@@ -1731,8 +1869,7 @@ func (handler *SgEventHandler) handleReaction(chatId string, senderId string, fr
 		senderName := GetContactName(connId, senderId)
 		emoji = fmt.Sprintf("%s[%s]", emoji, senderName)
 	}
-	msgId := fmt.Sprintf("%d", reaction.GetTargetSentTimestamp())
-
+	msgId := GetOriginalMsgId(connId, chatId, fmt.Sprintf("%d", reaction.GetTargetSentTimestamp()))
 	CSgNewMessageReactionNotify(connId, chatId, msgId, senderId, emoji, BoolToInt(fromMe))
 }
 
@@ -2088,7 +2225,7 @@ func (handler *SgEventHandler) handleDeleteForMe(evt *events.DeleteForMe) bool {
 		}
 
 		for _, msg := range msgDelete.GetMessages() {
-			msgId := fmt.Sprintf("%d", msg.GetSentTimestamp())
+			msgId := GetOriginalMsgId(connId, chatIdStr, fmt.Sprintf("%d", msg.GetSentTimestamp()))
 			LOG_TRACE(fmt.Sprintf("Call CSgDeleteMessageNotify %s %s", chatIdStr, msgId))
 			CSgDeleteMessageNotify(connId, chatIdStr, msgId, BoolToInt(true))
 		}
@@ -2352,7 +2489,6 @@ func SgLogin(connId int) int {
 		return -1
 	}
 
-	path := GetPath(connId)
 	client := GetClient(connId)
 	device := GetDevice(connId)
 	container := GetContainer(connId)
@@ -2370,6 +2506,9 @@ func SgLogin(connId int) int {
 		LOG_TRACE(fmt.Sprintf("acquire console"))
 		CSgSetProtocolUiControl(connId, 1)
 
+		qrPath := CSgGetQrPath()
+		useQrImage := (PromptAuthMethod() == AuthMethodQrImage)
+
 		fmt.Printf("\n")
 		fmt.Printf("Open Signal on your phone, go to Settings > Linked devices.\n")
 		fmt.Printf("Click on \"Link a device\", unlock the phone and aim its camera at the\n")
@@ -2381,19 +2520,17 @@ func SgLogin(connId int) int {
 		allowBackup := true
 		provChan := signalmeow.PerformProvisioning(ctx, container, deviceName, allowBackup)
 
-		hasGUI := HasGUI()
 		qrDisplayed := false
 
 		for resp := range provChan {
 			switch resp.State {
 			case signalmeow.StateProvisioningURLReceived:
 				LOG_DEBUG("provisioning URL received")
-				if hasGUI {
-					qrPath := path + "/tmp/qr.png"
+				if useQrImage {
 					qrcode.WriteFile(resp.ProvisioningURL, qrcode.Medium, 512, qrPath)
 					ShowImage(qrPath)
 				} else {
-					qrterminal.GenerateHalfBlock(resp.ProvisioningURL, qrterminal.L, os.Stdout)
+					ShowQrTerminal(resp.ProvisioningURL)
 				}
 				qrDisplayed = true
 
@@ -2435,7 +2572,7 @@ func SgLogin(connId int) int {
 
 		// delete temporary image file
 		if qrDisplayed {
-			_ = os.Remove(path + "/tmp/qr.png")
+			_ = os.Remove(qrPath)
 		}
 
 		LOG_TRACE(fmt.Sprintf("release console"))
@@ -2683,6 +2820,7 @@ func SgGetMessages(connId int, chatId string, limit int, fromMsgId string, owner
 
 	// Build recipient ID -> UUID string cache
 	recipientCache := make(map[uint64]string)
+	hasEdits := false
 
 	for i, item := range items {
 		notify := NotifyCache
@@ -2781,8 +2919,17 @@ func SgGetMessages(connId int, chatId string, limit int, fromMsgId string, owner
 			continue
 		}
 
-		timeSent := int(item.DateSent / 1000)
+		timeSent := int64(item.DateSent)
 		isEdited := len(item.GetRevisions()) > 0
+		if isEdited {
+			// Later edits, deletes and quotes may target any revision
+			revisionIds := []string{msgId}
+			for _, revision := range item.GetRevisions() {
+				revisionIds = append(revisionIds, fmt.Sprintf("%d", revision.GetDateSent()))
+			}
+			SeedEditRevisions(connId, chatId, msgId, revisionIds)
+			hasEdits = true
+		}
 
 		// Text and quote on the first part, only the last part may flush the cached batch
 		for part := 0; part == 0 || part < len(files); part++ {
@@ -2815,6 +2962,10 @@ func SgGetMessages(connId int, chatId string, limit int, fromMsgId string, owner
 				partQuotedId, fileId, filePath, fileStatus, timeSent, BoolToInt(isRead), BoolToInt(isEdited), fromMsgId,
 				partNotify)
 		}
+	}
+
+	if hasEdits {
+		SaveChatEdits(connId)
 	}
 
 	return 0
@@ -2886,9 +3037,17 @@ func SgSendMessage(connId int, chatId string, text string, quotedId string, quot
 			return -1
 		}
 
-		targetTimestamp, err := strconv.ParseUint(editMsgId, 10, 64)
+		originalTimestamp, err := strconv.ParseUint(editMsgId, 10, 64)
 		if err != nil {
 			LOG_WARNING(fmt.Sprintf("invalid edit msg id: %s", editMsgId))
+			return -1
+		}
+
+		// An edit targets the latest revision of the message
+		latestMsgId := GetLatestMsgId(connId, chatId, editMsgId)
+		targetTimestamp, err := strconv.ParseUint(latestMsgId, 10, 64)
+		if err != nil {
+			LOG_WARNING(fmt.Sprintf("invalid edit target msg id: %s", latestMsgId))
 			return -1
 		}
 
@@ -2937,9 +3096,10 @@ func SgSendMessage(connId int, chatId string, text string, quotedId string, quot
 			return -1
 		}
 		selfId := UUIDToString(device.ACI)
-		timeSent := int(targetTimestamp / 1000)
+		TrackEditRevision(connId, chatId, latestMsgId, fmt.Sprintf("%d", timestamp))
+		timeSent := int64(originalTimestamp)
 		CSgNewMessagesNotify(connId, chatId, editMsgId, selfId, text, 1, quotedId, "", "", 0, timeSent, 1, 1, NotifyDirect)
-		TrackRecentMessage(connId, chatId, selfId, targetTimestamp)
+		TrackRecentMessage(connId, chatId, selfId, originalTimestamp)
 	} else {
 		// Set body
 		if text != "" {
@@ -3031,7 +3191,7 @@ func SgSendMessage(connId int, chatId string, text string, quotedId string, quot
 			return -1
 		}
 		selfId := UUIDToString(device.ACI)
-		timeSent := int(timestamp / 1000)
+		timeSent := int64(timestamp)
 		echoFileId := ""
 		echoFilePath := ""
 		echoFileStatus := FileStatusNone
@@ -3261,7 +3421,7 @@ func SgGetChats(connId int) int {
 					CSgNewContactsNotify(connId, chatId, chatName, "", BoolToInt(false), BoolToInt(false), NotifyDirect)
 				}
 
-				lastMessageTime := int(chat.LatestMessageID / 1000)
+				lastMessageTime := int64(chat.LatestMessageID)
 				if lastMessageTime == 0 {
 					LOG_TRACE(fmt.Sprintf("Chat %s: skip (no timestamp)", chatId))
 					continue

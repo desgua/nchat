@@ -9,6 +9,7 @@ package main
 
 // #cgo linux LDFLAGS: -Wl,-unresolved-symbols=ignore-all
 // #cgo darwin LDFLAGS: -Wl,-undefined,dynamic_lookup
+// #include <stdlib.h>
 // extern void WmNewContactsNotify(int p_ConnId, char* p_ChatId, char* p_Name, char* p_Phone, int p_IsSelf, int p_IsAlias, int p_Notify);
 // extern void WmNewChatsNotify(int p_ConnId, char* p_ChatId, int p_IsUnread, int p_IsMuted, int p_IsPinned, int p_IsArchived, int p_LastMessageTime);
 // extern void WmNewGroupMembersNotify(int p_ConnId, char* p_ChatId, char* p_MembersJson);
@@ -30,7 +31,9 @@ package main
 // extern void WmClearStatus(int p_ConnId, int p_Flags);
 // extern int WmAppConfigGetNum(char* p_Param);
 // extern void WmAppConfigSetNum(char* p_Param, int p_Value);
-// extern int WmHasGui();
+// extern int WmPromptAuthMethod();
+// extern char* WmGetQrPath();
+// extern void WmShowImage(char* p_Path);
 // extern void WmLogTrace(char* p_Filename, int p_LineNo, char* p_Message);
 // extern void WmLogDebug(char* p_Filename, int p_LineNo, char* p_Message);
 // extern void WmLogInfo(char* p_Filename, int p_LineNo, char* p_Message);
@@ -41,6 +44,7 @@ import "C"
 import (
 	"path/filepath"
 	"runtime"
+	"unsafe"
 )
 
 //export CWmInit
@@ -81,6 +85,11 @@ func CWmSendMessage(connId int, chatId *C.char, text *C.char, quotedId *C.char, 
 //export CWmGetGroupMembers
 func CWmGetGroupMembers(connId int, chatId *C.char) int {
 	return WmGetGroupMembers(connId, C.GoString(chatId))
+}
+
+//export CWmAddKnownChat
+func CWmAddKnownChat(connId int, chatId *C.char) {
+	AddKnownChat(connId, C.GoString(chatId))
 }
 
 //export CWmGetContacts
@@ -222,8 +231,18 @@ func CWmAppConfigSetNum(param string, value int) {
 	C.WmAppConfigSetNum(C.CString(param), C.int(value))
 }
 
-func CWmHasGui() int {
-	return int(C.WmHasGui())
+func CWmPromptAuthMethod() int {
+	return int(C.WmPromptAuthMethod())
+}
+
+func CWmShowImage(path string) {
+	C.WmShowImage(C.CString(path))
+}
+
+func CWmGetQrPath() string {
+	cstr := C.WmGetQrPath()
+	defer C.free(unsafe.Pointer(cstr))
+	return C.GoString(cstr)
 }
 
 func LOG_TRACE(message string) {

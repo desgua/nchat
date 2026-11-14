@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <codecvt>
+#include <cstdlib>
 #include <cstring>
 #include <cwctype>
 #include <fstream>
@@ -169,13 +170,78 @@ std::string StrUtil::GetPass()
 
 std::string StrUtil::GetPhoneNumber()
 {
-  std::string str;
-  std::cout << "Enter phone number (ex. +6511111111): ";
-  std::getline(std::cin, str);
-  str.erase(std::remove_if(str.begin(), str.end(),
-                           [](const char& ch) { return !std::isdigit(ch) && (ch != '+'); }),
-            str.end());
-  return str;
+  // returns empty string if valid, otherwise the reason it is not
+  auto checkPhoneNumber = [](const std::string& p_Str) -> std::string
+  {
+    if (p_Str.empty()) return "Phone number is required.";
+
+    if (p_Str[0] != '+') return "Phone number must start with + and country code.";
+
+    if ((p_Str.size() < 2) ||
+        !std::all_of(p_Str.begin() + 1, p_Str.end(), [](const char& ch) {
+      return std::isdigit(static_cast<unsigned char>(ch));
+    }))
+    {
+      return "Phone number may only contain digits after +.";
+    }
+
+    return "";
+  };
+
+  // remove whitespace, e.g. spaces in "+65 1111 1111" or a pasted line ending
+  auto cleanPhoneNumber = [](std::string p_Str)
+  {
+    p_Str.erase(std::remove_if(p_Str.begin(), p_Str.end(),
+                               [](const char& ch) { return std::isspace(static_cast<unsigned char>(ch)); }),
+                p_Str.end());
+    return p_Str;
+  };
+
+  std::string defaultPhoneNumber;
+  const char* envPhoneNumber = getenv("NCHAT_PHONE_NUMBER");
+  if (envPhoneNumber != nullptr)
+  {
+    defaultPhoneNumber = cleanPhoneNumber(envPhoneNumber);
+    if (!checkPhoneNumber(defaultPhoneNumber).empty())
+    {
+      LOG_WARNING("ignoring invalid NCHAT_PHONE_NUMBER \"%s\"", envPhoneNumber);
+      defaultPhoneNumber.clear();
+    }
+  }
+
+  std::cout << "\n";
+  while (true)
+  {
+    if (defaultPhoneNumber.empty())
+    {
+      std::cout << "Phone number (ex. +6511111111): ";
+    }
+    else
+    {
+      std::cout << "Phone number (" << defaultPhoneNumber << "): ";
+    }
+
+    std::string str;
+    if (!std::getline(std::cin, str))
+    {
+      std::cout << "\n";
+      return "";
+    }
+
+    str = cleanPhoneNumber(str);
+    if (str.empty() && !defaultPhoneNumber.empty())
+    {
+      return defaultPhoneNumber;
+    }
+
+    const std::string error = checkPhoneNumber(str);
+    if (error.empty())
+    {
+      return str;
+    }
+
+    std::cout << error << "\n";
+  }
 }
 
 std::string StrUtil::GetProtocolName(const std::string& p_ProfileId)
