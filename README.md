@@ -8,7 +8,10 @@ nchat
 nchat is a terminal-based multi-protocol messaging client for Linux and macOS
 with support for Telegram, WhatsApp and Signal.
 
-![screenshot nchat](/doc/screenshot-nchat.png)
+<p align="center">
+  <img alt="screenshot nchat" src="doc/screenshot-nchat.png" width="738"><br>
+  <sub>nchat with the pastel-blue theme, see <a href="https://github.com/d99kris/nchat/wiki/Themes">Themes</a> for more.</sub>
+</p>
 
 Features
 --------
@@ -26,7 +29,7 @@ Features
 - Message history cache with text export
 - Desktop notifications for new messages
 - Toggle textized vs. graphical emojis
-- Customizable [themes](https://github.com/d99kris/nchat/wiki/Themes) and key bindings
+- Customizable themes and key bindings
 
 
 Quick Install
