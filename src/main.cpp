@@ -29,6 +29,7 @@
 #include "status.h"
 #include "strutil.h"
 #include "sysutil.h"
+#include "theme.h"
 #include "ui.h"
 
 #ifdef HAS_DUMMY
@@ -158,6 +159,8 @@ int main(int argc, char* argv[])
   bool isKeyDump = false;
   bool isRemove = false;
   bool isSetup = false;
+  bool isThemeInstall = false;
+  std::string theme;
   std::vector<std::string> args(argv + 1, argv + argc);
   for (auto it = args.begin(); it != args.end(); ++it)
   {
@@ -200,6 +203,16 @@ int main(int argc, char* argv[])
     else if ((*it == "-s") || (*it == "--setup"))
     {
       isSetup = true;
+    }
+    else if ((*it == "-t") || (*it == "--theme"))
+    {
+      // optional theme name, prompt for selection if not specified
+      isThemeInstall = true;
+      if ((std::distance(it + 1, args.end()) > 0) && ((it + 1)->rfind("-", 0) != 0))
+      {
+        ++it;
+        theme = *it;
+      }
     }
     else if ((*it == "-v") || (*it == "--version"))
     {
@@ -250,6 +263,13 @@ int main(int argc, char* argv[])
         return 1;
       }
     }
+  }
+
+  // Install theme - done while holding the dir lock, as a running nchat would
+  // otherwise overwrite color.conf on exit
+  if (isThemeInstall)
+  {
+    return Theme::Install(theme) ? 0 : 1;
   }
 
   // Remove profile
@@ -664,6 +684,8 @@ void ShowHelp()
     "    -m, --devmode          developer mode\n"
     "    -r, --remove           remove chat protocol account\n"
     "    -s, --setup            set up chat protocol account\n"
+    "    -t, --theme [THEME]    install color theme, or select from list of\n"
+    "                           available themes if not specified\n"
     "    -v, --version          output version information and exit\n"
     "    -x, --export <DIR>     export message cache to specified dir\n"
     "\n"
