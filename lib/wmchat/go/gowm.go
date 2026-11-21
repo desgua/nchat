@@ -1064,59 +1064,6 @@ type WmEventHandler struct {
 	connId int
 }
 
-var (
-	resolvingNewsletters   = make(map[string]bool)
-	resolvingNewslettersMx sync.Mutex
-)
-
-func ResolveNewsletter(connId int, jid types.JID) string {
-	jidStr := StrFromJid(jid)
-
-	// If already cached and not just the raw ID, return it
-	if HasContact(connId, jidStr) {
-		name := GetContactName(connId, jidStr)
-		if name != jidStr && name != "" {
-			return name
-		}
-	}
-
-	// Avoid duplicate in-flight network requests
-	resolvingNewslettersMx.Lock()
-	if resolvingNewsletters[jidStr] {
-		resolvingNewslettersMx.Unlock()
-		return jidStr
-	}
-	resolvingNewsletters[jidStr] = true
-	resolvingNewslettersMx.Unlock()
-
-	defer func() {
-		resolvingNewslettersMx.Lock()
-		delete(resolvingNewsletters, jidStr)
-		resolvingNewslettersMx.Unlock()
-	}()
-
-	client := GetClient(connId)
-	if client == nil {
-		return jidStr
-	}
-
-	ctx := context.TODO()
-	info, err := client.GetNewsletterInfo(ctx, jid)
-	if err != nil {
-		LOG_WARNING(fmt.Sprintf("get newsletter info failed for %s: %v", jidStr, err))
-		return jidStr
-	}
-
-if info != nil && len(info.ThreadMeta.Name.Text) > 0 {
-		name := SanitizeName(info.ThreadMeta.Name.Text)
-		AddContactName(connId, jidStr, name)
-		CWmNewContactsNotify(connId, jidStr, name, "", BoolToInt(false), BoolToInt(false), NotifyDirect)
-		return name
-	}
-
-	return jidStr
-}
-
 func (handler *WmEventHandler) HandleEvent(rawEvt interface{}) {
 	switch evt := rawEvt.(type) {
 
@@ -1159,23 +1106,7 @@ func (handler *WmEventHandler) HandleEvent(rawEvt interface{}) {
 
 	case *events.Message:
 		LOG_TRACE(fmt.Sprintf("%#v", evt))
-		// If this message belongs to a channel/newsletter, resolve name if not known
-		if evt.Info.Chat.Server == types.NewsletterServer {
-			chatId := StrFromJid(evt.Info.Chat)
-			if !HasContact(handler.connId, chatId) || GetContactName(handler.connId, chatId) == chatId {
-				go ResolveNewsletter(handler.connId, evt.Info.Chat)
-			}
-		}
 		handler.HandleMessage(evt.Info, evt.Message, false /*isSyncRead*/, SortOffsetLive)
-
-case *events.NewsletterJoin:
-		LOG_TRACE(fmt.Sprintf("%#v", evt))
-		channelId := StrFromJid(evt.ID)
-		channelName := SanitizeName(evt.NewsletterMetadata.ThreadMeta.Name.Text)
-		if len(channelName) > 0 {
-			AddContactName(handler.connId, channelId, channelName)
-			CWmNewContactsNotify(handler.connId, channelId, channelName, "", BoolToInt(false), BoolToInt(false), NotifyDirect)
-		}
 
 	case *events.UndecryptableMessage:
 		LOG_TRACE(fmt.Sprintf("%#v", evt))
