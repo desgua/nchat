@@ -62,7 +62,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
-var whatsmeowDate int = 20261107
+var whatsmeowDate int = 20261116
 
 type JSONMessage []json.RawMessage
 type JSONMessageType string
@@ -622,6 +622,11 @@ func DownloadFromFileId(connId int, fileId string) (string, int) {
 
 func DownloadFromFileInfo(client *whatsmeow.Client, info DownloadInfo) ([]byte, error) {
 	ctx := context.TODO()
+	if len(info.FileEncSha256) == 0 && len(info.MediaKey) > 0 {
+		// unencrypted media (e.g. channels), same check as whatsmeow Download()
+		LOG_TRACE("download unencrypted media, ignore media key")
+		info.MediaKey = nil
+	}
 	var err error = whatsmeow.ErrNoURLPresent
 	if len(info.Url) > 0 {
 		LOG_TRACE(fmt.Sprintf("download url: %s", info.Url))
@@ -1218,6 +1223,10 @@ case *events.NewsletterJoin:
 	case *events.JoinedGroup:
 		LOG_TRACE(fmt.Sprintf("%#v", evt))
 
+	case *events.NewsletterJoin:
+		LOG_TRACE(fmt.Sprintf("%#v", evt))
+		AddNewsletterContact(handler.connId, &evt.NewsletterMetadata, NotifyDirect)
+
 	case *events.OfflineSyncCompleted:
 		LOG_TRACE(fmt.Sprintf("%#v", evt))
 		handler.HandleSyncContacts()
@@ -1786,6 +1795,21 @@ func (handler *WmEventHandler) HandleSyncContacts() {
 	GetContacts(handler.connId)
 }
 
+func AddNewsletterContact(connId int, newsletter *types.NewsletterMetadata, notify int) {
+	newsletterId := StrFromJid(newsletter.ID)
+	newsletterName := SanitizeName(newsletter.ThreadMeta.Name.Text)
+	if len(newsletterName) == 0 {
+		return
+	}
+
+	newsletterPhone := ""
+	isSelf := BoolToInt(false)
+	isAlias := BoolToInt(false)
+	LOG_TRACE(fmt.Sprintf("Call CWmNewContactsNotify %s %s", newsletterId, newsletterName))
+	CWmNewContactsNotify(connId, newsletterId, newsletterName, newsletterPhone, isSelf, isAlias, notify)
+	AddContactName(connId, newsletterId, newsletterName)
+}
+
 func GetContacts(connId int) {
 	LOG_TRACE(fmt.Sprintf("GetContacts"))
 	CWmSetStatus(connId, FlagFetching)
@@ -2035,30 +2059,17 @@ func GetContacts(connId int) {
 		}
 	}
 
-	// channels / newsletters
-	newsletters, nlErr := client.GetSubscribedNewsletters(ctx)
-	if nlErr != nil {
-		LOG_WARNING(fmt.Sprintf("get subscribed newsletters failed %#v", nlErr))
+	// channels
+	newsletters, newsletterErr := client.GetSubscribedNewsletters(ctx)
+	if newsletterErr != nil {
+		LOG_WARNING(fmt.Sprintf("get subscribed newsletters failed %#v", newsletterErr))
 	} else {
-		LOG_TRACE(fmt.Sprintf("newsletters %#v", newsletters))
-
-		for _, nl := range newsletters {
-			if nl == nil {
+		for _, newsletter := range newsletters {
+			if newsletter == nil {
 				continue
 			}
 
-			channelId := StrFromJid(nl.ID)
-			channelName := SanitizeName(nl.ThreadMeta.Name.Text)
-			if len(channelName) == 0 {
-				channelName = channelId
-			}
-			channelPhone := ""
-			isSelf := BoolToInt(false)
-			isAlias := BoolToInt(false)
-
-			LOG_TRACE(fmt.Sprintf("Call CWmNewContactsNotify %s %s", channelId, channelName))
-			CWmNewContactsNotify(connId, channelId, channelName, channelPhone, isSelf, isAlias, notify)
-			AddContactName(connId, channelId, channelName)
+			AddNewsletterContact(connId, newsletter, notify)
 		}
 	}
 
@@ -3954,16 +3965,17 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 
 			thumbnail, width, height, seconds := GetVideoThumbnail(filePath)
 			videoMessage := waE2E.VideoMessage{
-				URL:           proto.String(uploaded.URL),
-				DirectPath:    proto.String(uploaded.DirectPath),
-				MediaKey:      uploaded.MediaKey,
-				Mimetype:      proto.String(fileType),
-				FileEncSHA256: uploaded.FileEncSHA256,
-				FileSHA256:    uploaded.FileSHA256,
-				FileLength:    proto.Uint64(uint64(len(data))),
-				GifPlayback:   proto.Bool(true),
-				JPEGThumbnail: thumbnail,
-				ContextInfo:   &contextInfo,
+				URL:              proto.String(uploaded.URL),
+				DirectPath:       proto.String(uploaded.DirectPath),
+				MediaKey:         uploaded.MediaKey,
+				Mimetype:         proto.String(fileType),
+				FileEncSHA256:    uploaded.FileEncSHA256,
+				FileSHA256:       uploaded.FileSHA256,
+				FileLength:       proto.Uint64(uint64(len(data))),
+				StreamingSidecar: uploaded.StreamingSidecar,
+				GifPlayback:      proto.Bool(true),
+				JPEGThumbnail:    thumbnail,
+				ContextInfo:      &contextInfo,
 			}
 			if (width > 0) && (height > 0) {
 				videoMessage.Width = proto.Uint32(width)
@@ -4039,16 +4051,17 @@ func WmSendMessage(connId int, chatId string, text string, quotedId string, quot
 
 				thumbnail, width, height, seconds := GetVideoThumbnail(filePath)
 				videoMessage = waE2E.VideoMessage{
-					Caption:       proto.String(text),
-					URL:           proto.String(uploaded.URL),
-					DirectPath:    proto.String(uploaded.DirectPath),
-					MediaKey:      uploaded.MediaKey,
-					Mimetype:      proto.String(fileType),
-					FileEncSHA256: uploaded.FileEncSHA256,
-					FileSHA256:    uploaded.FileSHA256,
-					FileLength:    proto.Uint64(uint64(len(data))),
-					JPEGThumbnail: thumbnail,
-					ContextInfo:   &contextInfo,
+					Caption:          proto.String(text),
+					URL:              proto.String(uploaded.URL),
+					DirectPath:       proto.String(uploaded.DirectPath),
+					MediaKey:         uploaded.MediaKey,
+					Mimetype:         proto.String(fileType),
+					FileEncSHA256:    uploaded.FileEncSHA256,
+					FileSHA256:       uploaded.FileSHA256,
+					FileLength:       proto.Uint64(uint64(len(data))),
+					StreamingSidecar: uploaded.StreamingSidecar,
+					JPEGThumbnail:    thumbnail,
+					ContextInfo:      &contextInfo,
 				}
 				if (width > 0) && (height > 0) {
 					videoMessage.Width = proto.Uint32(width)
