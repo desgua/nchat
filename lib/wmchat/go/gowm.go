@@ -640,15 +640,7 @@ func DownloadFromFileInfo(client *whatsmeow.Client, info DownloadInfo) ([]byte, 
 	}
 	if len(info.DirectPath) > 0 {
 		LOG_TRACE(fmt.Sprintf("download directpath: %s", info.DirectPath))
-		mmsType := whatsmeow.GetMMSType(info.MediaType)
-		data, err := client.DownloadMediaWithPath(ctx, info.DirectPath, info.FileEncSha256, info.FileSha256, info.MediaKey, info.MediaType, mmsType, false)
-		if err != nil && errors.Is(err, whatsmeow.ErrInvalidMediaHMAC) {
-			// channel (newsletter) media can carry a key but be served unencrypted;
-			// whatsmeow only skips decryption when key and enc hash are both nil
-			LOG_WARNING("hmac invalid, retrying as unencrypted media")
-			return client.DownloadMediaWithPath(ctx, info.DirectPath, nil, info.FileSha256, nil, info.MediaType, mmsType, false)
-		}
-		return data, err
+		return client.DownloadMediaWithPath(ctx, info.DirectPath, info.FileEncSha256, info.FileSha256, info.MediaKey, info.MediaType, whatsmeow.GetMMSType(info.MediaType), false)
 	}
 	return nil, err
 }
