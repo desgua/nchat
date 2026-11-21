@@ -700,8 +700,8 @@ const (
 	AuthMethodCode       = 3
 )
 
-func PromptAuthMethod() int {
-	return CWmPromptAuthMethod()
+func PromptAuthMethod(connId int) int {
+	return CWmPromptAuthMethod(connId)
 }
 
 func ShowQrTerminal(code string) {
@@ -3602,7 +3602,7 @@ func WmLogin(connId int) int {
 		CWmSetProtocolUiControl(connId, 1)
 
 		qrPath := CWmGetQrPath()
-		authMethod := PromptAuthMethod()
+		authMethod := PromptAuthMethod(connId)
 		usePairingCode := (authMethod == AuthMethodCode)
 		useQrImage := (authMethod == AuthMethodQrImage)
 

@@ -1716,7 +1716,6 @@ void UiModel::Impl::TransferFile(const std::vector<std::string>& p_FilePaths)
 
       FileInfo fileInfo;
       fileInfo.filePath = filePath;
-      fileInfo.fileType = FileUtil::GetMimeType(filePath);
 
       std::shared_ptr<SendMessageRequest> sendMessageRequest =
         std::make_shared<SendMessageRequest>();
@@ -4175,14 +4174,6 @@ void UiModel::Impl::SaveEditMessage()
     }
   }
 
-  // prepare a new FileInfo struct if original message has a file
-  if (!chatMessage.fileInfo.empty())
-  {
-    FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(chatMessage.fileInfo);
-    fileInfo.fileType = FileUtil::GetMimeType(fileInfo.filePath);
-    editMessageRequest->chatMessage.fileInfo = ProtocolUtil::FileInfoToHex(fileInfo);
-  }
-
   // update text content
   editMessageRequest->chatMessage.text = EntryStrToSendStr(entryStr);
   editMessageRequest->chatMessage.mentions = ParseMentions(profileId, chatId,
@@ -4964,15 +4955,8 @@ void UiModel::Impl::PerformForwardMessage(const std::pair<std::string, std::stri
   std::shared_ptr<SendMessageRequest> sendMessageRequest =
     std::make_shared<SendMessageRequest>();
 
-  // prepare a new FileInfo struct if original message has a file
-  if (!message.fileInfo.empty())
-  {
-    FileInfo fileInfo = ProtocolUtil::FileInfoFromHex(message.fileInfo);
-    fileInfo.fileType = FileUtil::GetMimeType(fileInfo.filePath);
-    sendMessageRequest->chatMessage.fileInfo = ProtocolUtil::FileInfoToHex(fileInfo);
-  }
-
-  // copy text and use selected chat
+  // copy file, text and use selected chat
+  sendMessageRequest->chatMessage.fileInfo = message.fileInfo;
   sendMessageRequest->chatMessage.text = message.text;
   sendMessageRequest->chatId = p_Chat.second;
 

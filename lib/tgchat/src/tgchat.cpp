@@ -53,7 +53,7 @@
 // For development testing of sponsored messages only
 // #define SIMULATED_SPONSORED_MESSAGES
 
-static const int s_TdlibDate = 20261021;
+static const int s_TdlibDate = 20261108;
 
 // telegram timestamps only have second resolution; telegram message ids increase monotonically
 // within a chat (server ids are shifted left by 20 bits), so derive a stable, order-preserving
@@ -978,6 +978,7 @@ void TgChat::Impl::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessa
           static const int attachmentSendType = AppConfig::GetNum("attachment_send_type");
           FileInfo fileInfo =
             ProtocolUtil::FileInfoFromHex(sendMessageRequest->chatMessage.fileInfo);
+          fileInfo.fileType = FileUtil::GetMimeType(fileInfo.filePath);
           std::vector<std::string> mimeParts = StrUtil::Split(fileInfo.fileType, '/');
           std::string mimeType = mimeParts.at(0);
           std::string mimeSubType = (mimeParts.size() > 1) ? mimeParts.at(1) : "";
@@ -2591,7 +2592,7 @@ void TgChat::Impl::OnAuthStateUpdate()
       {
         m_IsReinit = true;
         SetProtocolUiControl(true);
-        std::cout << "Telegram reauthentication for " << GetProfilePhoneNumber() << " required\n\n";
+        std::cout << "\nTelegram reauthentication for " << GetProfilePhoneNumber() << " required\n\n";
       }
     }
 
@@ -2747,7 +2748,7 @@ int TgChat::Impl::GetAuthMethod()
     {
       m_IsReinit = true;
       SetProtocolUiControl(true);
-      std::cout << "Telegram reauthentication for " << GetProfilePhoneNumber() << " required\n";
+      std::cout << "\nTelegram reauthentication for " << GetProfilePhoneNumber() << " required\n";
     }
 
     // terminal qr size (cols x rows) of a telegram login link

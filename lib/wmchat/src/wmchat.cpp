@@ -430,7 +430,7 @@ void WmChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
           FileInfo fileInfo =
             ProtocolUtil::FileInfoFromHex(sendMessageRequest->chatMessage.fileInfo);
           filePath = fileInfo.filePath;
-          fileType = fileInfo.fileType;
+          fileType = FileUtil::GetMimeType(filePath);
         }
 
         std::string mentionsJson = ProtocolUtil::MentionsToJson(sendMessageRequest->chatMessage.mentions);
@@ -471,7 +471,7 @@ void WmChat::PerformRequest(std::shared_ptr<RequestMessage> p_RequestMessage)
           FileInfo fileInfo =
             ProtocolUtil::FileInfoFromHex(editMessageRequest->chatMessage.fileInfo);
           filePath = fileInfo.filePath;
-          fileType = fileInfo.fileType;
+          fileType = FileUtil::GetMimeType(filePath);
         }
 
         std::string editMentionsJson = ProtocolUtil::MentionsToJson(editMessageRequest->chatMessage.mentions);
@@ -747,6 +747,16 @@ std::string WmChat::GetProxyUrl() const
   }
 
   return "";
+}
+
+void WmChat::PrintReauthNotice()
+{
+  if (m_IsSetup) return;
+
+  // profile id is WhatsAppMd_<phone>
+  const std::string phoneNumber = m_ProfileId.substr(m_ProfileId.find('_') + 1);
+  LOG_INFO("reauthentication for %s required", phoneNumber.c_str());
+  std::cout << "\nWhatsApp reauthentication for " << phoneNumber << " required\n";
 }
 
 void WmChat::SetProtocolUiControl(bool p_IsTakeControl)
@@ -1394,8 +1404,14 @@ void WmAppConfigSetNum(char* p_Param, int p_Value)
   free(p_Param);
 }
 
-int WmPromptAuthMethod()
+int WmPromptAuthMethod(int p_ConnId)
 {
+  WmChat* instance = WmChat::GetInstance(p_ConnId);
+  if (instance != nullptr)
+  {
+    instance->PrintReauthNotice();
+  }
+
   // terminal qr size (cols x rows) of a whatsapp link code
   static const int qrCols = 69;
   static const int qrRows = 35;

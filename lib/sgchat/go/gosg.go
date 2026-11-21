@@ -738,8 +738,8 @@ const (
 	AuthMethodQrTerminal = 2
 )
 
-func PromptAuthMethod() int {
-	return CSgPromptAuthMethod()
+func PromptAuthMethod(connId int) int {
+	return CSgPromptAuthMethod(connId)
 }
 
 func ShowQrTerminal(code string) {
@@ -2507,7 +2507,7 @@ func SgLogin(connId int) int {
 		CSgSetProtocolUiControl(connId, 1)
 
 		qrPath := CSgGetQrPath()
-		useQrImage := (PromptAuthMethod() == AuthMethodQrImage)
+		useQrImage := (PromptAuthMethod(connId) == AuthMethodQrImage)
 
 		fmt.Printf("\n")
 		fmt.Printf("Open Signal on your phone, go to Settings > Linked devices.\n")
